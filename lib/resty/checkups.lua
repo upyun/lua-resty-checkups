@@ -1,13 +1,16 @@
 local lock = require "resty.lock"
 local cjson = require "cjson.safe"
 
+local tab_insert = table.insert
+local str_sub = string.sub
 local ERR = ngx.ERR
-local INFO = ngx.INFO
 local WARN = ngx.WARN
 local tcp = ngx.socket.tcp
 local mutex = ngx.shared.mutex
 local state = ngx.shared.state
 local localtime = ngx.localtime
+local re_find = ngx.re.find
+local worker_pid = ngx.worker.pid
 
 
 local _M = {
@@ -17,19 +20,80 @@ local _M = {
 }
 
 local CHECKUP_TIMER_KEY = "checkups:timer"
-local CHECKUP_FAIL_COUNTER_KEY = "checkups:fail_counter"
+local CHECKUP_HEALTH_KEY = "checkups:health"
+
+local PEER_STATUS_PREFIX = "peer_status:"
+local PEER_FAIL_COUNTER_PREFIX = "peer_fail_counter:"
+local CLS_LAST_CHECK_TIME_PREFIX = "cls_last_check_time:"
 
 local upstream = {}
 
 
-local function get_fail_counter(skey, key)
-    local counter_key = skey .. key
-
+local function get_lock(key)
     local lock = lock:new("locks")
-    local elapsed, err = lock:lock(CHECKUP_FAIL_COUNTER_KEY)
+    local elapsed, err = lock:lock(key)
     if not elapsed then
-        ngx.log(WARN, "failed to acquire the lock: ", err)
+        ngx.log(WARN, "failed to acquire the lock: " .. key .. ', ' .. err)
         return nil, err
+    end
+
+    return lock
+end
+
+
+local function release_lock(lock)
+    local ok, err = lock:unlock()
+    if not ok then
+        ngx.log(ngx.WARN, "failed to unlock: ", err)
+    end
+end
+
+
+local function update_peer_status(peer_key, status, msg, time)
+    local status_key = PEER_STATUS_PREFIX .. peer_key
+
+    local old_status, err = state:get(status_key)
+    if err then
+        ngx.log(ERR, "get old status " .. status_key .. ' ' .. err)
+        return
+    end
+
+    if not old_status then
+        old_status = {}
+    else
+        old_status = cjson.decode(old_status)
+    end
+
+    if old_status.status ~= status then
+        old_status.status = status
+        old_status.msg = msg
+        old_status.lastmodified = time
+        local ok, err = state:set(status_key, cjson.encode(old_status))
+        if not ok then
+            ngx.log(ERR, "failed to set new status " .. err)
+        end
+    end
+end
+
+
+local function update_peer_status_locked(peer_key, status, msg, time)
+    local lock = get_lock(CHECKUP_HEALTH_KEY)
+    if not lock then
+        return
+    end
+
+    update_peer_status(peer_key, status, msg, time)
+
+    release_lock(lock)
+end
+
+
+local function get_fail_counter_locked(peer_key)
+    local counter_key = PEER_FAIL_COUNTER_PREFIX .. peer_key
+
+    local lock = get_lock(CHECKUP_HEALTH_KEY)
+    if not lock then
+        return
     end
 
     local fail_num, err = state:get(counter_key)
@@ -37,38 +101,45 @@ local function get_fail_counter(skey, key)
         ngx.log(ERR, "get fail_num " .. counter_key .. ' ' .. err)
     end
 
-    local ok, err = lock:unlock()
-    if not ok then
-        ngx.log(ngx.WARN, "failed to unlock: ", err)
-    end
+    release_lock(lock)
 
     return fail_num or 0
 end
 
 
-local function update_fail_counter(skey, key, set)
-    local counter_key = skey .. key
+local function clear_fail_counter_locked(peer_key)
+    local counter_key = PEER_FAIL_COUNTER_PREFIX .. peer_key
 
-    local lock = lock:new("locks")
-    local elapsed, err = lock:lock(CHECKUP_FAIL_COUNTER_KEY)
-    if not elapsed then
-        ngx.log(WARN, "failed to acquire the lock: ", err)
+    local lock = get_lock(CHECKUP_HEALTH_KEY)
+    if not lock then
+        return
+    end
+
+    local ok, err = state:set(counter_key, 0)
+    if not ok then
+        ngx.log(ERR, "failed to clear fail_num " .. err)
+    end
+
+    release_lock(lock)
+end
+
+
+local function increase_fail_counter_locked(peer_key, ups_max_fails)
+    local counter_key = PEER_FAIL_COUNTER_PREFIX .. peer_key
+
+    local lock = get_lock(CHECKUP_HEALTH_KEY)
+    if not lock then
         return
     end
 
     local fail_num, err = state:get(counter_key)
     if err then
-        local ok, err = lock:unlock()
-        if not ok then
-            ngx.log(ngx.WARN, "failed to unlock: ", err)
-        end
+        release_lock(lock)
         ngx.log(ERR, "get fail_num " .. counter_key .. ' ' .. err)
         return
     end
 
-    if set then
-        fail_num = set
-    elseif not fail_num then
+    if not fail_num then
         fail_num = 1
     else
         fail_num = fail_num + 1
@@ -77,23 +148,25 @@ local function update_fail_counter(skey, key, set)
     local ok, err = state:set(counter_key, fail_num)
     if not ok then
         ngx.log(ERR, "failed to set fail_num " .. err)
+        release_lock(lock)
+        return
     end
 
-    local ok, err = lock:unlock()
-    if not ok then
-        ngx.log(ngx.WARN, "failed to unlock: ", err)
+    if fail_num >= ups_max_fails then
+        update_peer_status(peer_key, _M.STATUS_ERR, "max fail exceeded",
+            localtime())
     end
+
+    release_lock(lock)
 end
 
 
 function _M.ready_ok(skey, callback)
-    local cluster_state = cjson.decode(state:get(skey .. ":cluster")) or {}
     local ups = upstream.checkups[skey]
-    local ups_max_fail = ups.max_fail
+    local ups_max_fails = ups.max_fails
 
     for level, cls in ipairs(ups.cluster) do
         local counter = cls.counter
-        local cls_state = cluster_state[level] or {}
 
         local idx = counter() -- pre request load-balancing with round-robin
         local try = cls.try or #cls.servers
@@ -102,18 +175,16 @@ function _M.ready_ok(skey, callback)
         for i=1, len_servers, 1 do
             local srv = cls.servers[idx]
             local key = srv.host .. ":" .. tostring(srv.port)
-            local fail_num = get_fail_counter(skey, key)
+            local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX .. key))
 
-            -- positive check and passive check both passed
-            if (cls_state[key] == nil or cls_state[key].status == "ok")
-                and fail_num < ups_max_fail then
+            if peer_status == nil or peer_status.status == _M.STATUS_OK then
                 local ok, err = callback(srv.host, srv.port)
                 if ok == _M.STATUS_OK then
                     return _M.STATUS_OK
                 end
 
-                if err then
-                    update_fail_num(skey, key)
+                if upstream.passive_check and err then
+                    increase_fail_counter_locked(key, ups_max_fails)
                 end
 
                 try = try - 1
@@ -140,7 +211,7 @@ local heartbeat = {
             return _M.STATUS_ERR, err
         end
 
-        ok, err = sock:setkeepalive()
+        sock:setkeepalive()
 
         return _M.STATUS_OK
     end,
@@ -207,51 +278,82 @@ local heartbeat = {
 
         return _M.STATUS_OK
     end,
+
+    http = function(host, port, timeout, opts)
+        local sock = tcp()
+        sock:settimeout(timeout * 1000)
+        local ok, err = sock:connect(host, port)
+        if not ok then
+            ngx.log(ERR, "failed to connect: ", host, ":",
+                    tostring(port), " ", err)
+            return _M.STATUS_ERR, err
+        end
+
+        local req = opts.query
+        if not req then
+            ngx.log(ERR, "http upstream has no query string")
+            return _M.STATUS_ERR
+        end
+
+        local bytes, err = sock:send(req)
+        if not bytes then
+            ngx.log(ERR, "failed to send request to ", host, ": ", err)
+            return _M.STATUS_ERR, err
+        end
+
+        local status_line, err = sock:receive()
+        if not status_line then
+            ngx.log(ERR, "failed to receive status line from ",
+                host, ": ", err)
+            return _M.STATUS_ERR, err
+        end
+
+        local statuses = opts.statuses
+        if statuses then
+            local from, to, err = re_find(status_line,
+                [[^HTTP/\d+\.\d+\s+(\d+)]], "joi", nil, 1)
+            if not from then
+                ngx.log(ERR, "bad status line from ", host, ": ", err)
+                return _M.STATUS_ERR, err
+            end
+            local status = tonumber(str_sub(status_line, from, to))
+            if not statuses[status] then
+                return _M.STATUS_ERR
+            end
+        end
+
+        sock:setkeepalive()
+
+        return _M.STATUS_OK
+    end,
 }
 
 
 local function cluster_heartbeat(skey)
-    local cluster_key = skey .. ":cluster"
-    local cluster_state = cjson.decode(state:get(cluster_key)) or {}
-
     local ups = upstream.checkups[skey]
-    local ups_timeout = ups.timeout
+    local ups_timeout = ups.timeout or 60
     local ups_typ = ups.typ or "general"
     local ups_heartbeat = ups.heartbeat
-    local ups_opts = ups.opts
-    local need_update = false
+    local ups_opts = ups.heartbeat_opts or {}
 
     for level, cls in ipairs(ups.cluster) do
-        if not cluster_state[level] then
-            need_update = true
-            cluster_state[level] = {}
-        end
         for id, srv in ipairs(cls.servers) do
-            local status = "err"
+            local status = _M.STATUS_ERR
             local key = srv.host .. ":" .. tostring(srv.port)
             local cb_heartbeat = ups_heartbeat or heartbeat[ups_typ]
-            local ok, err = cb_heartbeat(srv.host, srv.port, ups_timeout, opts)
+            local ok, err = cb_heartbeat(srv.host, srv.port, ups_timeout, ups_opts)
             if ok == _M.STATUS_OK then
-                update_fail_counter(skey, key, 0)
-                status = "ok"
+                local fail_num = get_fail_counter_locked(skey, key)
+                if fail_num > 0 then
+                    clear_fail_counter_locked(key)
+                end
+                status = _M.STATUS_OK
             end
-            local old_state = cluster_state[level][key]
-            if not old_state or old_state.status ~= status then
-                cluster_state[level][key] = {
-                    id = id,
-                    status = status,
-                    msg = err or cjson.null,
-                    lastmodified = localtime(),
-                }
-                need_update = true
-            end
+            update_peer_status_locked(key, status, err or cjson.null, localtime())
         end
     end
 
-    if need_update then
-        state:set(cluster_key, cjson.encode(cluster_state))
-    end
-    state:set(cluster_key .. ":lastchecktime", cjson.encode(localtime()))
+    state:set(CLS_LAST_CHECK_TIME_PREFIX .. skey, localtime())
 end
 
 
@@ -318,6 +420,8 @@ function _M.prepare_checker(config)
         end
     end
 
+    upstream.positive_check = config.global.positive_check
+    upstream.passive_check = config.global.passive_check
     upstream.checkup_timer_interval = config.global.checkup_timer_interval
     upstream.checkup_timer_overtime = config.global.checkup_timer_overtime
     upstream.checkups = {}
@@ -336,7 +440,46 @@ function _M.prepare_checker(config)
 end
 
 
+local function get_upstream_status(skey)
+    local ups = upstream.checkups[skey]
+    if not ups then
+        return {}
+    end
+
+    local ups_status = {}
+    for level, cls in ipairs(ups.cluster) do
+        local servers = cls.servers
+        ups_status[level] = {}
+        if servers and type(servers) == "table" and #servers > 0 then
+            for id, srv in ipairs(servers) do
+                local key = srv.host .. ":" .. tostring(srv.port)
+                local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX .. key)) or {}
+                peer_status.id = id
+                peer_status.fail_num = get_fail_counter_locked(key)
+                tab_insert(ups_status[level], peer_status)
+            end
+        end
+    end
+
+    return ups_status
+end
+
+
+function _M.get_status()
+    local all_status = {}
+    for skey in pairs(upstream.checkups) do
+        all_status[skey] = get_upstream_status(skey)
+    end
+
+    return cjson.encode(all_status)
+end
+
+
 function _M.create_checker()
+    if not upstream.positive_check then
+        return
+    end
+
     local ckey = CHECKUP_TIMER_KEY
     local val, err = mutex:get(ckey)
     if val then
@@ -353,19 +496,14 @@ function _M.create_checker()
         return
     end
 
-    local lock = lock:new("locks")
-    local elapsed, err = lock:lock(ckey)
-    if not elapsed then
+    local lock = get_lock(ckey)
+    if not lock then
         return ngx.log(WARN, "failed to acquire the lock: ", err)
     end
 
     val, err = mutex:get(ckey)
     if val then
-        local ok, err = lock:unlock()
-        if not ok then
-            ngx.log(WARN, "failed to unlock: ", err)
-            return
-        end
+        release_lock(ckey)
         return
     end
 
@@ -379,20 +517,12 @@ function _M.create_checker()
     local overtime = upstream.checkup_timer_overtime
     local ok, err = mutex:set(ckey, 1, overtime)
     if not ok then
-        local ok, err = lock:unlock()
-        if not ok then
-            ngx.log(WARN, "failed to unlock: ", err)
-            return
-        end
-
+        release_lock(lock)
         ngx.log(WARN, "failed to update shm: ", err)
         return
     end
 
-    local ok, err = lock:unlock()
-    if not ok then
-        ngx.log(WARN, "failed to unlock: ", err)
-    end
+    release_lock(lock)
 end
 
 return _M
