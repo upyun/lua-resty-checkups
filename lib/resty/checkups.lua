@@ -19,7 +19,7 @@ local _M = {
 }
 
 local CHECKUP_TIMER_KEY = "checkups:timer"
-local CHECKUP_HEALTH_KEY = "checkups:health"
+local CHECKUP_ACC_FAILS_KEY = "checkups:acc_fails"
 
 local PEER_STATUS_PREFIX = "peer_status:"
 local PEER_FAIL_COUNTER_PREFIX = "peer_fail_counter:"
@@ -49,6 +49,10 @@ end
 
 
 local function update_peer_status(peer_key, status, msg, time)
+    if status ~= _M.STATUS_OK and status ~= _M.STATUS_ERR then
+        return
+    end
+
     local status_key = PEER_STATUS_PREFIX .. peer_key
 
     local old_status, err = state:get(status_key)
@@ -75,85 +79,48 @@ local function update_peer_status(peer_key, status, msg, time)
 end
 
 
-local function update_peer_status_locked(peer_key, status, msg, time)
-    local lock = get_lock(CHECKUP_HEALTH_KEY)
-    if not lock then
-        return
-    end
-
-    update_peer_status(peer_key, status, msg, time)
-
-    release_lock(lock)
-end
-
-
-local function get_fail_counter_locked(peer_key)
+local function get_acc_fail_counter(peer_key)
     local counter_key = PEER_FAIL_COUNTER_PREFIX .. peer_key
 
-    local lock = get_lock(CHECKUP_HEALTH_KEY)
-    if not lock then
-        return
-    end
-
-    local fail_num, err = state:get(counter_key)
+    local acc_fail_num, err = state:get(counter_key)
     if err then
-        ngx.log(ERR, "get fail_num " .. counter_key .. ' ' .. err)
+        ngx.log(ERR, "get acc_fail_num " .. counter_key .. ' ' .. err)
     end
 
-    release_lock(lock)
-
-    return fail_num or 0
+    return acc_fail_num or 0
 end
 
 
-local function clear_fail_counter_locked(peer_key)
+local function increase_acc_fail_counter_locked(peer_key, ups_max_acc_fails, acc_timeout)
     local counter_key = PEER_FAIL_COUNTER_PREFIX .. peer_key
 
-    local lock = get_lock(CHECKUP_HEALTH_KEY)
+    local lock = get_lock(CHECKUP_ACC_FAILS_KEY)
     if not lock then
         return
     end
 
-    local ok, err = state:set(counter_key, 0)
-    if not ok then
-        ngx.log(ERR, "failed to clear fail_num " .. err)
-    end
-
-    release_lock(lock)
-end
-
-
-local function increase_fail_counter_locked(peer_key, ups_max_fails)
-    local counter_key = PEER_FAIL_COUNTER_PREFIX .. peer_key
-
-    local lock = get_lock(CHECKUP_HEALTH_KEY)
-    if not lock then
-        return
-    end
-
-    local fail_num, err = state:get(counter_key)
+    local acc_fail_num, err = state:get(counter_key)
     if err then
         release_lock(lock)
-        ngx.log(ERR, "get fail_num " .. counter_key .. ' ' .. err)
+        ngx.log(ERR, "get acc_fail_num " .. counter_key .. ' ' .. err)
         return
     end
 
-    if not fail_num then
-        fail_num = 1
+    if not acc_fail_num then
+        acc_fail_num = 1
     else
-        fail_num = fail_num + 1
+        acc_fail_num = acc_fail_num + 1
     end
 
-    local ok, err = state:set(counter_key, fail_num)
+    local ok, err = state:set(counter_key, acc_fail_num, acc_timeout)
     if not ok then
-        ngx.log(ERR, "failed to set fail_num " .. err)
+        ngx.log(ERR, "failed to set acc_fail_num " .. err)
         release_lock(lock)
         return
     end
 
-    if fail_num >= ups_max_fails then
-        update_peer_status(peer_key, _M.STATUS_ERR, "max fail exceeded",
-            localtime())
+    if acc_fail_num >= ups_max_acc_fails then
+        ngx.log(WARN, "max acc fails reached " .. peer_key .. ", acc_fails:" .. acc_fail_num)
     end
 
     release_lock(lock)
@@ -167,8 +134,9 @@ function _M.ready_ok(skey, callback)
         return nil, "unknown skey " .. skey
     end
 
-    local ups_max_fails = ups.max_fails
+    local ups_max_acc_fails = ups.max_acc_fails or 5
     local ups_type = ups.typ
+    local ups_acc_timeout = ups.acc_timeout or 60
 
     for level, cls in ipairs(ups.cluster) do
         local counter = cls.counter
@@ -189,14 +157,14 @@ function _M.ready_ok(skey, callback)
                         local status = tonumber(res.status)
                         local opts = ups.heartbeat_opts
                         if opts and opts.statuses and opts.statuses[status] == false then
-                            increase_fail_counter_locked(key, ups_max_fails)
+                            increase_acc_fail_counter_locked(key, ups_max_acc_fails, ups_acc_timeout)
                         end
                     end
 
                     return res
                 end
 
-                increase_fail_counter_locked(key, ups_max_fails)
+                increase_acc_fail_counter_locked(key, ups_max_acc_fails, ups_acc_timeout)
 
                 try = try - 1
                 if try < 1 then -- max try times
@@ -351,18 +319,10 @@ local function cluster_heartbeat(skey)
 
     for level, cls in ipairs(ups.cluster) do
         for id, srv in ipairs(cls.servers) do
-            local status = _M.STATUS_ERR
             local key = srv.host .. ":" .. tostring(srv.port)
             local cb_heartbeat = ups_heartbeat or heartbeat[ups_typ]
-            local ok, err = cb_heartbeat(srv.host, srv.port, ups_timeout, ups_opts)
-            if ok == _M.STATUS_OK then
-                local fail_num = get_fail_counter_locked(skey, key)
-                if fail_num > 0 then
-                    clear_fail_counter_locked(key)
-                end
-                status = _M.STATUS_OK
-            end
-            update_peer_status_locked(key, status, err or cjson.null, localtime())
+            local status, err = cb_heartbeat(srv.host, srv.port, ups_timeout, ups_opts)
+            update_peer_status(key, status, err or cjson.null, localtime())
         end
     end
 
@@ -467,7 +427,7 @@ local function get_upstream_status(skey)
                 local key = srv.host .. ":" .. tostring(srv.port)
                 local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX .. key)) or {}
                 peer_status.id = id
-                peer_status.fail_num = get_fail_counter_locked(key)
+                peer_status.acc_fail_num = get_acc_fail_counter(key)
                 tab_insert(ups_status[level], peer_status)
             end
         end

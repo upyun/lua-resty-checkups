@@ -10,7 +10,8 @@ _M.global = {
 _M.api = {
     timeout = 2,
     typ = "general",
-    max_fails = 1,
+    max_acc_fails = 1,
+    acc_timeout = 5,
 
     cluster = {
         {   -- level 1

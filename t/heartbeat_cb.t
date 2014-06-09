@@ -69,7 +69,7 @@ __DATA__
         content_by_lua '
             local checkups = require "resty.checkups"
             checkups.create_checker()
-            ngx.sleep(1)
+            ngx.sleep(2)
             local cb_ok = function(host, port)
                 ngx.say(host .. ":" .. port)
                 return checkups.STATUS_OK

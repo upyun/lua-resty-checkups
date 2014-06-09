@@ -7,7 +7,7 @@ use Cwd qw(cwd);
 
 workers(4);
 
-plan tests => repeat_each() * (blocks() * 5);
+plan tests => repeat_each() * (blocks() * 3 + 2);
 
 my $pwd = cwd();
 
@@ -93,7 +93,7 @@ GET /t
 [warn]
 
 
-=== TEST 2: max_fails
+=== TEST 2: max_acc_fails
 --- http_config eval: $::HttpConfig
 --- config
     location = /t {
@@ -118,13 +118,13 @@ GET /t
 --- response_body
 127.0.0.1:12354 ERR
 127.0.0.1:12355 ERR
+127.0.0.1:12355
 127.0.0.1:12356
-127.0.0.1:12356
-127.0.0.1:12356
---- no_error_log
-[error]
-[alert]
-[warn]
+127.0.0.1:12354
+--- grep_error_log eval: qr/max acc fails reached 127.0.0.1:\d+, acc_fails:\d+/
+--- grep_error_log_out
+max acc fails reached 127.0.0.1:12354, acc_fails:1
+max acc fails reached 127.0.0.1:12355, acc_fails:1
 
 
 === TEST 3: no server available
@@ -167,13 +167,14 @@ GET /t
 127.0.0.1:12354 ERR
 127.0.0.1:12355 ERR
 max try exceeded
+127.0.0.1:12355 ERR
 127.0.0.1:12356 ERR
-127.0.0.1:12360 ERR
-127.0.0.1:12361 ERR
 max try exceeded
-no upstream available
-no upstream available
---- no_error_log
-[error]
-[alert]
-[warn]
+127.0.0.1:12356
+127.0.0.1:12354
+--- grep_error_log eval: qr/max acc fails reached 127.0.0.1:\d+, acc_fails:\d+/
+--- grep_error_log_out
+max acc fails reached 127.0.0.1:12354, acc_fails:1
+max acc fails reached 127.0.0.1:12355, acc_fails:1
+max acc fails reached 127.0.0.1:12355, acc_fails:2
+max acc fails reached 127.0.0.1:12356, acc_fails:1

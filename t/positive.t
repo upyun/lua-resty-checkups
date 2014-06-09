@@ -98,10 +98,11 @@ GET /t
 127.0.0.1:12354 ERR
 127.0.0.1:12355 ERR
 max try exceeded
-127.0.0.1:12360 ERR
-no upstream available
-no upstream available
-no upstream available
+127.0.0.1:12355 ERR
+127.0.0.1:12354 ERR
+max try exceeded
+127.0.0.1:12354
+127.0.0.1:12354
 --- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+ connection refused/
 --- grep_error_log_out
 cb_heartbeat(): failed to connect: 127.0.0.1:12356 connection refused

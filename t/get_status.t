@@ -134,8 +134,8 @@ connection refused
 connection refused
 127.0.0.1:12354 ERR
 127.0.0.1:12355 ERR
-1
-max fail exceeded
+0
+null
 --- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+ connection refused/
 --- grep_error_log_out
 cb_heartbeat(): failed to connect: 127.0.0.1:12356 connection refused
@@ -173,8 +173,8 @@ GET /t
 --- response_body
 127.0.0.1:12354 ERR
 127.0.0.1:12355 ERR
-1
-max fail exceeded
+0
+null
 0
 null
 --- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+ connection refused/
