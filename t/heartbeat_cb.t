@@ -42,9 +42,12 @@ our $HttpConfig = qq{
     }
 
     init_by_lua '
-        local config = require "config_http"
-        config.global.passive_check = false
+        local config = require "config_api"
         local checkups = require "resty.checkups"
+        -- customize heartbeat callback
+        config.api.heartbeat = function(host, port, timeout, opts)
+            return checkups.STATUS_ERR
+        end
         checkups.prepare_checker(config)
     ';
 
@@ -72,11 +75,11 @@ __DATA__
                 return checkups.STATUS_OK
             end
 
-            local ok, err = checkups.ready_ok("status", cb_ok)
+            local ok, err = checkups.ready_ok("api", cb_ok)
             if err then
                 ngx.say(err)
             end
-            local ok, err = checkups.ready_ok("status", cb_ok)
+            local ok, err = checkups.ready_ok("api", cb_ok)
             if err then
                 ngx.say(err)
             end
@@ -85,9 +88,7 @@ __DATA__
 --- request
 GET /t
 --- response_body
-127.0.0.1:12354
-127.0.0.1:12356
+no upstream avalable
+no upstream avalable
 --- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+ connection refused/
 --- grep_error_log_out
-cb_heartbeat(): failed to connect: 127.0.0.1:12360 connection refused
-cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
