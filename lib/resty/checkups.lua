@@ -10,7 +10,6 @@ local mutex = ngx.shared.mutex
 local state = ngx.shared.state
 local localtime = ngx.localtime
 local re_find = ngx.re.find
-local worker_pid = ngx.worker.pid
 
 
 local _M = {
@@ -306,7 +305,8 @@ local heartbeat = {
             return _M.STATUS_ERR, err
         end
 
-        local status_line, err = sock:receive()
+        local readline = sock:receiveuntil("\r\n")
+        local status_line, err = readline()
         if not status_line then
             ngx.log(ERR, "failed to receive status line from ",
                 host, ":", port, ": ", err)
