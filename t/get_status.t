@@ -114,7 +114,6 @@ cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
 
             local cb_err = function(host, port)
                 ngx.say(host .. ":" .. port .. " " .. "ERR")
-                return nil, 1, true
             end
             checkups.ready_ok("api", cb_err)
 
@@ -156,7 +155,6 @@ cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
 
             local cb_err = function(host, port)
                 ngx.say(host .. ":" .. port .. " " .. "ERR")
-                return nil, 1, true
             end
             checkups.ready_ok("api", cb_err)
 

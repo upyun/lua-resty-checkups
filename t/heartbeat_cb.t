@@ -88,7 +88,7 @@ __DATA__
 --- request
 GET /t
 --- response_body
-no upstream avalable
-no upstream avalable
+no upstream available
+no upstream available
 --- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+ connection refused/
 --- grep_error_log_out

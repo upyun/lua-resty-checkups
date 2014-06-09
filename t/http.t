@@ -79,6 +79,7 @@ __DATA__
             ngx.sleep(5)
             local cb_ok = function(host, port)
                 ngx.say(host .. ":" .. port)
+                return 1
             end
 
             local ok, err = checkups.ready_ok("status", cb_ok)

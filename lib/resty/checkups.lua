@@ -182,12 +182,12 @@ function _M.ready_ok(skey, callback)
             local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX .. key))
 
             if peer_status == nil or peer_status.status == _M.STATUS_OK then
-                local res, err, srv_fail = callback(srv.host, srv.port)
-                if not err then
-                    return res, err
+                local res = callback(srv.host, srv.port)
+                if res then
+                    return res
                 end
 
-                if upstream.passive_check and srv_fail then
+                if upstream.passive_check then
                     increase_fail_counter_locked(key, ups_max_fails)
                 end
 
@@ -200,7 +200,7 @@ function _M.ready_ok(skey, callback)
         end
     end
 
-    return nil, "no upstream avalable"
+    return nil, "no upstream available"
 end
 
 

@@ -68,6 +68,7 @@ __DATA__
             checkups.create_checker()
             local cb = function(host, port)
                 ngx.say(host .. ":" .. port)
+                return 1
             end
             checkups.ready_ok("api", cb)
             checkups.ready_ok("api", cb)
@@ -102,10 +103,10 @@ GET /t
             checkups.create_checker()
             local cb = function(host, port)
                 ngx.say(host .. ":" .. port)
+                return 1
             end
             checkups.ready_ok("api", function(host, port)
                 ngx.say(host .. ":" .. port .. " " .. "ERR")
-                return nil, 1, true
             end)
             checkups.ready_ok("api", cb)
             checkups.ready_ok("api", cb)
@@ -136,10 +137,10 @@ GET /t
             checkups.create_checker()
             local cb_ok = function(host, port)
                 ngx.say(host .. ":" .. port)
+                return 1
             end
             local cb_err = function(host, port)
                 ngx.say(host .. ":" .. port .. " " .. "ERR")
-                return nil, 1, true
             end
 
             local ok, err = checkups.ready_ok("api", cb_err)
@@ -170,8 +171,8 @@ max try exceeded
 127.0.0.1:12360 ERR
 127.0.0.1:12361 ERR
 max try exceeded
-no upstream avalable
-no upstream avalable
+no upstream available
+no upstream available
 --- no_error_log
 [error]
 [alert]
