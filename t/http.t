@@ -41,6 +41,16 @@ our $HttpConfig = qq{
         }
     }
 
+    server {
+        listen 12357;
+        location = /status {
+            content_by_lua '
+                ngx.sleep(3)
+                ngx.status = 200
+            ';
+        }
+    }
+
     init_by_lua '
         local config = require "config_http"
         config.global.passive_check = false
@@ -66,7 +76,7 @@ __DATA__
         content_by_lua '
             local checkups = require "resty.checkups"
             checkups.create_checker()
-            ngx.sleep(1)
+            ngx.sleep(5)
             local cb_ok = function(host, port)
                 ngx.say(host .. ":" .. port)
                 return checkups.STATUS_OK
@@ -87,7 +97,10 @@ GET /t
 --- response_body
 127.0.0.1:12354
 127.0.0.1:12356
---- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+ connection refused/
+--- grep_error_log eval: qr/failed to connect: 127.0.0.1:\d+ connection refused|failed to receive status line from 127.0.0.1:\d+: timeout/
 --- grep_error_log_out
-cb_heartbeat(): failed to connect: 127.0.0.1:12360 connection refused
-cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
+failed to receive status line from 127.0.0.1:12357: timeout
+failed to connect: 127.0.0.1:12360 connection refused
+failed to connect: 127.0.0.1:12361 connection refused
+--- timeout: 10
+

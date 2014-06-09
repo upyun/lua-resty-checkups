@@ -309,7 +309,7 @@ local heartbeat = {
         local status_line, err = sock:receive()
         if not status_line then
             ngx.log(ERR, "failed to receive status line from ",
-                host, ": ", err)
+                host, ":", port, ": ", err)
             return _M.STATUS_ERR, err
         end
 
