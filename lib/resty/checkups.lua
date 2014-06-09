@@ -187,9 +187,7 @@ function _M.ready_ok(skey, callback)
                     return res
                 end
 
-                if upstream.passive_check then
-                    increase_fail_counter_locked(key, ups_max_fails)
-                end
+                increase_fail_counter_locked(key, ups_max_fails)
 
                 try = try - 1
                 if try < 1 then -- max try times
@@ -427,7 +425,6 @@ function _M.prepare_checker(config)
     end
 
     upstream.positive_check = config.global.positive_check
-    upstream.passive_check = config.global.passive_check
     upstream.checkup_timer_interval = config.global.checkup_timer_interval
     upstream.checkup_timer_overtime = config.global.checkup_timer_overtime
     upstream.checkups = {}

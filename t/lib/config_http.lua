@@ -3,7 +3,6 @@ _M = {}
 
 _M.global = {
     positive_check = true,
-    passive_check = true,
     checkup_timer_interval = 2,
     checkup_timer_overtime = 10,
 }

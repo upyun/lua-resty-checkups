@@ -43,7 +43,6 @@ our $HttpConfig = qq{
 
     init_by_lua '
         local config = require "config_api"
-        config.global.passive_check = false
         local checkups = require "resty.checkups"
         checkups.prepare_checker(config)
     ';
@@ -99,11 +98,10 @@ GET /t
 127.0.0.1:12354 ERR
 127.0.0.1:12355 ERR
 max try exceeded
-127.0.0.1:12355 ERR
-127.0.0.1:12354 ERR
-max try exceeded
-127.0.0.1:12354
-127.0.0.1:12354
+127.0.0.1:12360 ERR
+no upstream available
+no upstream available
+no upstream available
 --- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+ connection refused/
 --- grep_error_log_out
 cb_heartbeat(): failed to connect: 127.0.0.1:12356 connection refused
