@@ -13,8 +13,6 @@ _M.status = {
     heartbeat_opts = {
         query = "GET /status HTTP/1.1\r\nHost: localhost\r\n\r\n",
         statuses = {
-            [200] = true,
-            [404] = true,
             [502] = false,
         },
     },

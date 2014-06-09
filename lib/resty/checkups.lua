@@ -168,6 +168,7 @@ function _M.ready_ok(skey, callback)
     end
 
     local ups_max_fails = ups.max_fails
+    local ups_type = ups.typ
 
     for level, cls in ipairs(ups.cluster) do
         local counter = cls.counter
@@ -184,6 +185,14 @@ function _M.ready_ok(skey, callback)
             if peer_status == nil or peer_status.status == _M.STATUS_OK then
                 local res = callback(srv.host, srv.port)
                 if res then
+                    if ups_type == "http" and type(res) == "table" and res.status then
+                        local status = tonumber(res.status)
+                        local opts = ups.heartbeat_opts
+                        if opts and opts.statuses and opts.statuses[status] == false then
+                            increase_fail_counter_locked(key, ups_max_fails)
+                        end
+                    end
+
                     return res
                 end
 
@@ -321,7 +330,7 @@ local heartbeat = {
             end
 
             local status = tonumber(str_sub(status_line, from, to))
-            if not statuses[status] then
+            if statuses[status] == false then
                 return _M.STATUS_ERR, "bad status code"
             end
         end
