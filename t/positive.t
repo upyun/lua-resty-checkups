@@ -42,7 +42,7 @@ our $HttpConfig = qq{
     }
 
     init_by_lua '
-        local config = require "config"
+        local config = require "config_api"
         config.global.passive_check = false
         local checkups = require "resty.checkups"
         checkups.prepare_checker(config)
@@ -64,7 +64,6 @@ __DATA__
     location = /t {
         access_log off;
         content_by_lua '
-            local config = require "config"
             local checkups = require "resty.checkups"
             checkups.create_checker()
             ngx.sleep(1)
