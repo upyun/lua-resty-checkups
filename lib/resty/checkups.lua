@@ -165,7 +165,7 @@ function _M.ready_ok(skey, callback)
     local ups = upstream.checkups[skey]
     if not ups then
         ngx.log(ERR, "unknown skey " .. skey)
-        return _M.STATUS_ERR, "unknown skey " .. skey
+        return nil, "unknown skey " .. skey
     end
 
     local ups_max_fails = ups.max_fails
@@ -183,25 +183,25 @@ function _M.ready_ok(skey, callback)
             local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX .. key))
 
             if peer_status == nil or peer_status.status == _M.STATUS_OK then
-                local ok, err = callback(srv.host, srv.port)
-                if ok == _M.STATUS_OK then
-                    return _M.STATUS_OK
+                local res, err, srv_fail = callback(srv.host, srv.port)
+                if not err then
+                    return res, err
                 end
 
-                if upstream.passive_check and err then
+                if upstream.passive_check and srv_fail then
                     increase_fail_counter_locked(key, ups_max_fails)
                 end
 
                 try = try - 1
                 if try < 1 then -- max try times
-                    return _M.STATUS_ERR, "max try exceeded"
+                    return nil, "max try exceeded"
                 end
             end
             idx = idx % len_servers + 1
         end
     end
 
-    return _M.STATUS_ERR, "no upstream avalable"
+    return nil, "no upstream avalable"
 end
 
 
