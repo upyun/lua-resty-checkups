@@ -163,6 +163,11 @@ end
 
 function _M.ready_ok(skey, callback)
     local ups = upstream.checkups[skey]
+    if not ups then
+        ngx.log(ERR, "unknown skey " .. skey)
+        return _M.STATUS_ERR, "unknown skey " .. skey
+    end
+
     local ups_max_fails = ups.max_fails
 
     for level, cls in ipairs(ups.cluster) do
@@ -316,9 +321,10 @@ local heartbeat = {
                 ngx.log(ERR, "bad status line from ", host, ": ", err)
                 return _M.STATUS_ERR, err
             end
+
             local status = tonumber(str_sub(status_line, from, to))
             if not statuses[status] then
-                return _M.STATUS_ERR
+                return _M.STATUS_ERR, "bad status code"
             end
         end
 
