@@ -7,7 +7,7 @@ use Cwd qw(cwd);
 
 workers(4);
 
-plan tests => repeat_each() * (blocks() * 3 + 2);
+plan tests => repeat_each() * (blocks() * 3);
 
 my $pwd = cwd();
 
@@ -43,7 +43,6 @@ our $HttpConfig = qq{
 
     init_by_lua '
         local config = require "config_api"
-        config.global.positive_check = false
         local checkups = require "resty.checkups"
         checkups.prepare_checker(config)
     ';
@@ -87,10 +86,10 @@ GET /t
 127.0.0.1:12354
 127.0.0.1:12355
 127.0.0.1:12356
---- no_error_log
-[error]
-[alert]
-[warn]
+--- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+ connection refused/
+--- grep_error_log_out
+cb_heartbeat(): failed to connect: 127.0.0.1:12360 connection refused
+cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
 
 
 === TEST 2: max_acc_fails

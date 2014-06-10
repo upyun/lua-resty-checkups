@@ -394,7 +394,6 @@ function _M.prepare_checker(config)
         end
     end
 
-    upstream.positive_check = config.global.positive_check
     upstream.checkup_timer_interval = config.global.checkup_timer_interval
     upstream.checkup_timer_overtime = config.global.checkup_timer_overtime
     upstream.checkups = {}
@@ -453,10 +452,6 @@ end
 
 
 function _M.create_checker()
-    if not upstream.positive_check then
-        return
-    end
-
     local ckey = CHECKUP_TIMER_KEY
     local val, err = mutex:get(ckey)
     if val then
