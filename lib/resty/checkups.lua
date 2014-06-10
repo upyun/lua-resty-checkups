@@ -419,16 +419,20 @@ local function get_upstream_status(skey)
     end
 
     local ups_status = {}
+    local lastmodified = state:get(CLS_LAST_CHECK_TIME_PREFIX .. skey) or ""
+    ups_status.lastmodified = lastmodified
+    ups_status.cls = {}
+
     for level, cls in ipairs(ups.cluster) do
         local servers = cls.servers
-        ups_status[level] = {}
+        ups_status.cls[level] = {}
         if servers and type(servers) == "table" and #servers > 0 then
             for id, srv in ipairs(servers) do
                 local key = srv.host .. ":" .. tostring(srv.port)
                 local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX .. key)) or {}
                 peer_status.id = id
                 peer_status.acc_fail_num = get_acc_fail_counter(key)
-                tab_insert(ups_status[level], peer_status)
+                tab_insert(ups_status.cls[level], peer_status)
             end
         end
     end
@@ -441,6 +445,7 @@ function _M.get_status()
     local all_status = {}
     for skey in pairs(upstream.checkups) do
         all_status[skey] = get_upstream_status(skey)
+        ngx.log(ERR, skey .. ' ' .. all_status[skey].lastmodified)
     end
 
     return cjson.encode(all_status)
