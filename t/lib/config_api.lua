@@ -11,7 +11,7 @@ _M.api = {
     timeout = 2,
     typ = "general",
     max_acc_fails = 1,
-    acc_timeout = 5,
+    acc_timeout = 2,
 
     cluster = {
         {   -- level 1
