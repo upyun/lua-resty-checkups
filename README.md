@@ -20,7 +20,6 @@ _M = {}
 
 _M.global = {
     positive_check = true,
-    passive_check = true,
     checkup_timer_interval = 2,
     checkup_timer_overtime = 10,
 }
@@ -28,7 +27,8 @@ _M.global = {
 _M.api = {
     timeout = 2,
     typ = "general",
-    max_fails = 1,
+    max_acc_fails = 1,
+    acc_timeout = 30,
 
     cluster = {
         {   -- level 1
@@ -54,12 +54,11 @@ _M.status = {
     heartbeat_opts = {
         query = "GET /status HTTP/1.1\r\nHost: localhost\r\n\r\n",
         statuses = {
-            [200] = true,
-            [404] = true,
             [502] = false,
         },
     },
-    max_fails = 1,
+    max_acc_fails = 1,
+    acc_timeout = 30,
 
     cluster = {
         {   -- level 1
@@ -73,8 +72,8 @@ _M.status = {
         },
         {   -- level 2
             servers = {
-                { host = "127.0.0.1", port = 12360 },
-                { host = "127.0.0.1", port = 12361 },
+                { host = "127.0.0.1", port = 12350 },
+                { host = "127.0.0.1", port = 12351 },
             }
         },
     },
@@ -146,16 +145,11 @@ http {
             	ngx.sleep(5)
             	local cb_ok = function(host, port)
                 	ngx.say(host .. ":" .. port)
+                    return 1
             	end
 
-            	local ok, err = checkups.ready_ok("status", cb_ok)
-            	if err then
-                	ngx.say(err)
-            	end
-            	local ok, err = checkups.ready_ok("status", cb_ok)
-            	if err then
-                	ngx.say(err)
-            	end
+            	local res = checkups.ready_ok("status", cb_ok)
+            	local res = checkups.ready_ok("status", cb_ok)
         	';
 		}
 	}
@@ -186,7 +180,7 @@ Methods
 
 ## ready_ok
 
-`syntax: res, err = checkups.ready_ok(callback)`
+`syntax: res = checkups.ready_ok(callback)`
 
 
 ## get_status
