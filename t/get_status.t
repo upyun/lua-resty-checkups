@@ -64,10 +64,9 @@ __DATA__
         access_log off;
         content_by_lua '
             local checkups = require "resty.checkups"
-            local cjson = require "cjson.safe"
             checkups.create_checker()
             ngx.sleep(1)
-            local st = cjson.decode(checkups.get_status())
+            local st = checkups.get_status()
             ngx.say(st["api"].cls[1][1].status)
             ngx.say(st["api"].cls[1][2].status)
             ngx.say(st["api"].cls[1][3].status)
@@ -100,10 +99,9 @@ cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
         access_log off;
         content_by_lua '
             local checkups = require "resty.checkups"
-            local cjson = require "cjson.safe"
             checkups.create_checker()
             ngx.sleep(1)
-            local st = cjson.decode(checkups.get_status())
+            local st = checkups.get_status()
             ngx.say(st["api"].cls[1][1].status)
             ngx.say(st["api"].cls[1][2].status)
             ngx.say(st["api"].cls[1][3].status)
@@ -117,7 +115,7 @@ cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
             end
             checkups.ready_ok("api", cb_err)
 
-            local st = cjson.decode(checkups.get_status())
+            local st = checkups.get_status()
             ngx.say(st["api"].cls[1][1].status)
             ngx.say(st["api"].cls[1][1].msg)
         ';
@@ -149,7 +147,6 @@ cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
         access_log off;
         content_by_lua '
             local checkups = require "resty.checkups"
-            local cjson = require "cjson.safe"
             checkups.create_checker()
             ngx.sleep(1)
 
@@ -158,12 +155,12 @@ cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
             end
             checkups.ready_ok("api", cb_err)
 
-            local st = cjson.decode(checkups.get_status())
+            local st = checkups.get_status()
             ngx.say(st["api"].cls[1][1].status)
             ngx.say(st["api"].cls[1][1].msg)
 
             ngx.sleep(2)
-            local st = cjson.decode(checkups.get_status())
+            local st = checkups.get_status()
             ngx.say(st["api"].cls[1][1].status)
             ngx.say(st["api"].cls[1][1].msg)
         ';
@@ -193,7 +190,6 @@ cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
         access_log off;
         content_by_lua '
             local checkups = require "resty.checkups"
-            local cjson = require "cjson.safe"
             checkups.create_checker()
             ngx.sleep(1)
 
@@ -202,11 +198,11 @@ cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
             end
             checkups.ready_ok("api", cb_err)
 
-            local st = cjson.decode(checkups.get_status())
+            local st = checkups.get_status()
             ngx.say(st["api"].cls[1][1].acc_fail_num)
 
             ngx.sleep(4)
-            local st = cjson.decode(checkups.get_status())
+            local st = checkups.get_status()
             ngx.say(st["api"].cls[1][1].acc_fail_num)
         ';
     }

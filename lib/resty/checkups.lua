@@ -420,7 +420,7 @@ local function get_upstream_status(skey)
 
     local ups_status = {}
     local lastmodified = state:get(CLS_LAST_CHECK_TIME_PREFIX .. skey) or ""
-    ups_status.lastmodified = lastmodified
+    ups_status.last_check_time = lastmodified
     ups_status.cls = {}
 
     for level, cls in ipairs(ups.cluster) do
@@ -447,7 +447,7 @@ function _M.get_status()
         all_status[skey] = get_upstream_status(skey)
     end
 
-    return cjson.encode(all_status)
+    return all_status
 end
 
 
