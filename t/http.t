@@ -7,7 +7,7 @@ use Cwd qw(cwd);
 
 workers(4);
 
-plan tests => repeat_each() * (blocks() * 2 + 1);
+plan tests => repeat_each() * (blocks() * 2 + 2);
 
 my $pwd = cwd();
 
@@ -103,3 +103,32 @@ failed to connect: 127.0.0.1:12360 connection refused
 failed to connect: 127.0.0.1:12361 connection refused
 --- timeout: 10
 
+
+=== TEST 2: fail with status code
+--- http_config eval: $::HttpConfig
+--- config
+    location = /t {
+        access_log off;
+        content_by_lua '
+            local checkups = require "resty.checkups"
+            checkups.create_checker()
+            ngx.sleep(5)
+            local cb = function(host, port)
+                ngx.say(host .. ":" .. port)
+                return {status = 502}
+            end
+
+            local ok  = checkups.ready_ok("status", cb)
+        ';
+    }
+--- request
+GET /t
+--- response_body
+127.0.0.1:12354
+--- grep_error_log eval: qr/failed to connect: 127.0.0.1:\d+ connection refused|failed to receive status line from 127.0.0.1:\d+: timeout|max acc fails reached 127.0.0.1:\d+, acc_fails:\d+/
+--- grep_error_log_out
+failed to receive status line from 127.0.0.1:12357: timeout
+failed to connect: 127.0.0.1:12360 connection refused
+failed to connect: 127.0.0.1:12361 connection refused
+max acc fails reached 127.0.0.1:12354, acc_fails:1
+--- timeout: 10
