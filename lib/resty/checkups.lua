@@ -134,7 +134,7 @@ function _M.ready_ok(skey, callback)
         return nil, "unknown skey " .. skey
     end
 
-    local ups_max_acc_fails = ups.max_acc_fails or 5
+    local ups_max_acc_fails = ups.max_acc_fails
     local ups_type = ups.typ
     local ups_acc_timeout = ups.acc_timeout or 60
 
@@ -153,7 +153,8 @@ function _M.ready_ok(skey, callback)
             if peer_status == nil or peer_status.status == _M.STATUS_OK then
                 local res = callback(srv.host, srv.port)
                 if res then
-                    if ups_type == "http" and type(res) == "table" and res.status then
+                    if ups_max_acc_fails and ups_type == "http"
+                        and type(res) == "table" and res.status then
                         local status = tonumber(res.status)
                         local opts = ups.heartbeat_opts
                         if opts and opts.statuses and opts.statuses[status] == false then
@@ -445,7 +446,6 @@ function _M.get_status()
     local all_status = {}
     for skey in pairs(upstream.checkups) do
         all_status[skey] = get_upstream_status(skey)
-        ngx.log(ERR, skey .. ' ' .. all_status[skey].lastmodified)
     end
 
     return cjson.encode(all_status)
