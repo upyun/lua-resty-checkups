@@ -67,13 +67,13 @@ __DATA__
             checkups.create_checker()
             ngx.sleep(1)
             local st = checkups.get_status()
-            ngx.say(st["api"][1][1].status)
-            ngx.say(st["api"][1][2].status)
-            ngx.say(st["api"][1][3].status)
-            ngx.say(st["api"][1][3].msg)
-            ngx.say(st["api"][2][1].status)
-            ngx.say(st["api"][2][2].status)
-            ngx.say(st["api"][2][2].msg)
+            ngx.say(st["cls:api"][1][1].status)
+            ngx.say(st["cls:api"][1][2].status)
+            ngx.say(st["cls:api"][1][3].status)
+            ngx.say(st["cls:api"][1][3].msg)
+            ngx.say(st["cls:api"][2][1].status)
+            ngx.say(st["cls:api"][2][2].status)
+            ngx.say(st["cls:api"][2][2].msg)
         ';
     }
 --- request
@@ -102,13 +102,13 @@ cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
             checkups.create_checker()
             ngx.sleep(1)
             local st = checkups.get_status()
-            ngx.say(st["api"][1][1].status)
-            ngx.say(st["api"][1][2].status)
-            ngx.say(st["api"][1][3].status)
-            ngx.say(st["api"][1][3].msg)
-            ngx.say(st["api"][2][1].status)
-            ngx.say(st["api"][2][2].status)
-            ngx.say(st["api"][2][2].msg)
+            ngx.say(st["cls:api"][1][1].status)
+            ngx.say(st["cls:api"][1][2].status)
+            ngx.say(st["cls:api"][1][3].status)
+            ngx.say(st["cls:api"][1][3].msg)
+            ngx.say(st["cls:api"][2][1].status)
+            ngx.say(st["cls:api"][2][2].status)
+            ngx.say(st["cls:api"][2][2].msg)
 
             local cb_err = function(host, port)
                 ngx.say(host .. ":" .. port .. " " .. "ERR")
@@ -116,8 +116,8 @@ cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
             checkups.ready_ok("api", cb_err)
 
             local st = checkups.get_status()
-            ngx.say(st["api"][1][1].status)
-            ngx.say(st["api"][1][1].msg)
+            ngx.say(st["cls:api"][1][1].status)
+            ngx.say(st["cls:api"][1][1].msg)
         ';
     }
 --- request
@@ -156,13 +156,13 @@ cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
             checkups.ready_ok("api", cb_err)
 
             local st = checkups.get_status()
-            ngx.say(st["api"][1][1].status)
-            ngx.say(st["api"][1][1].msg)
+            ngx.say(st["cls:api"][1][1].status)
+            ngx.say(st["cls:api"][1][1].msg)
 
             ngx.sleep(2)
             local st = checkups.get_status()
-            ngx.say(st["api"][1][1].status)
-            ngx.say(st["api"][1][1].msg)
+            ngx.say(st["cls:api"][1][1].status)
+            ngx.say(st["cls:api"][1][1].msg)
         ';
     }
 --- request
@@ -202,15 +202,15 @@ cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
 
             checkups.ready_ok("api", cb_err)
             local st = checkups.get_status()
-            ngx.say(st["api"][1][1].acc_fail_num)
+            ngx.say(st["cls:api"][1][1].acc_fail_num)
 
             checkups.ready_ok("api", cb_err)
             local st = checkups.get_status()
-            ngx.say(st["api"][1][1].acc_fail_num)
+            ngx.say(st["cls:api"][1][1].acc_fail_num)
 
             checkups.ready_ok("api", cb_ok)
             local st = checkups.get_status()
-            ngx.say(st["api"][1][1].acc_fail_num)
+            ngx.say(st["cls:api"][1][1].acc_fail_num)
         ';
     }
 --- request
