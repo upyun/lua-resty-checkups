@@ -438,7 +438,7 @@ end
 function _M.get_status()
     local all_status = {}
     for skey in pairs(upstream.checkups) do
-        all_status[skey] = get_upstream_status(skey)
+        all_status["cls:" .. skey] = get_upstream_status(skey)
     end
     local last_check_time = state:get(CHECKUP_LAST_CHECK_TIME_KEY) or cjson.null
     all_status.last_check_time = last_check_time
