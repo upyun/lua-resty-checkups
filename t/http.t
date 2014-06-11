@@ -125,10 +125,9 @@ failed to connect: 127.0.0.1:12361 connection refused
 GET /t
 --- response_body
 127.0.0.1:12354
---- grep_error_log eval: qr/failed to connect: 127.0.0.1:\d+ connection refused|failed to receive status line from 127.0.0.1:\d+: timeout|max acc fails reached 127.0.0.1:\d+, acc_fails:\d+/
+--- grep_error_log eval: qr/failed to connect: 127.0.0.1:\d+ connection refused|failed to receive status line from 127.0.0.1:\d+: timeout/
 --- grep_error_log_out
 failed to receive status line from 127.0.0.1:12357: timeout
 failed to connect: 127.0.0.1:12360 connection refused
 failed to connect: 127.0.0.1:12361 connection refused
-max acc fails reached 127.0.0.1:12354, acc_fails:1
 --- timeout: 10

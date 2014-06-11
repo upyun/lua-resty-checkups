@@ -67,24 +67,24 @@ __DATA__
             checkups.create_checker()
             ngx.sleep(1)
             local st = checkups.get_status()
-            ngx.say(st["api"].cls[1][1].status)
-            ngx.say(st["api"].cls[1][2].status)
-            ngx.say(st["api"].cls[1][3].status)
-            ngx.say(st["api"].cls[1][3].msg)
-            ngx.say(st["api"].cls[2][1].status)
-            ngx.say(st["api"].cls[2][2].status)
-            ngx.say(st["api"].cls[2][2].msg)
+            ngx.say(st["api"][1][1].status)
+            ngx.say(st["api"][1][2].status)
+            ngx.say(st["api"][1][3].status)
+            ngx.say(st["api"][1][3].msg)
+            ngx.say(st["api"][2][1].status)
+            ngx.say(st["api"][2][2].status)
+            ngx.say(st["api"][2][2].msg)
         ';
     }
 --- request
 GET /t
 --- response_body
-0
-0
-1
+ok
+ok
+err
 connection refused
-0
-1
+ok
+err
 connection refused
 --- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+ connection refused/
 --- grep_error_log_out
@@ -102,13 +102,13 @@ cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
             checkups.create_checker()
             ngx.sleep(1)
             local st = checkups.get_status()
-            ngx.say(st["api"].cls[1][1].status)
-            ngx.say(st["api"].cls[1][2].status)
-            ngx.say(st["api"].cls[1][3].status)
-            ngx.say(st["api"].cls[1][3].msg)
-            ngx.say(st["api"].cls[2][1].status)
-            ngx.say(st["api"].cls[2][2].status)
-            ngx.say(st["api"].cls[2][2].msg)
+            ngx.say(st["api"][1][1].status)
+            ngx.say(st["api"][1][2].status)
+            ngx.say(st["api"][1][3].status)
+            ngx.say(st["api"][1][3].msg)
+            ngx.say(st["api"][2][1].status)
+            ngx.say(st["api"][2][2].status)
+            ngx.say(st["api"][2][2].msg)
 
             local cb_err = function(host, port)
                 ngx.say(host .. ":" .. port .. " " .. "ERR")
@@ -116,23 +116,23 @@ cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
             checkups.ready_ok("api", cb_err)
 
             local st = checkups.get_status()
-            ngx.say(st["api"].cls[1][1].status)
-            ngx.say(st["api"].cls[1][1].msg)
+            ngx.say(st["api"][1][1].status)
+            ngx.say(st["api"][1][1].msg)
         ';
     }
 --- request
 GET /t
 --- response_body
-0
-0
-1
+ok
+ok
+err
 connection refused
-0
-1
+ok
+err
 connection refused
 127.0.0.1:12354 ERR
 127.0.0.1:12355 ERR
-0
+ok
 null
 --- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+ connection refused/
 --- grep_error_log_out
@@ -156,13 +156,13 @@ cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
             checkups.ready_ok("api", cb_err)
 
             local st = checkups.get_status()
-            ngx.say(st["api"].cls[1][1].status)
-            ngx.say(st["api"].cls[1][1].msg)
+            ngx.say(st["api"][1][1].status)
+            ngx.say(st["api"][1][1].msg)
 
             ngx.sleep(2)
             local st = checkups.get_status()
-            ngx.say(st["api"].cls[1][1].status)
-            ngx.say(st["api"].cls[1][1].msg)
+            ngx.say(st["api"][1][1].status)
+            ngx.say(st["api"][1][1].msg)
         ';
     }
 --- request
@@ -170,9 +170,9 @@ GET /t
 --- response_body
 127.0.0.1:12354 ERR
 127.0.0.1:12355 ERR
-0
+ok
 null
-0
+ok
 null
 --- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+ connection refused/
 --- grep_error_log_out
@@ -183,7 +183,7 @@ cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
 --- timeout: 10
 
 
-=== TEST 4: acc fail timeout
+=== TEST 4: acc fail
 --- http_config eval: $::HttpConfig
 --- config
     location = /t {
@@ -194,33 +194,32 @@ cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
             ngx.sleep(1)
 
             local cb_err = function(host, port)
-                ngx.say(host .. ":" .. port .. " " .. "ERR")
+                return
             end
+            local cb_ok = function(host, port)
+                return 1
+            end
+
             checkups.ready_ok("api", cb_err)
-
             local st = checkups.get_status()
-            ngx.say(st["api"].cls[1][1].acc_fail_num)
+            ngx.say(st["api"][1][1].acc_fail_num)
 
-            ngx.sleep(4)
+            checkups.ready_ok("api", cb_err)
             local st = checkups.get_status()
-            ngx.say(st["api"].cls[1][1].acc_fail_num)
+            ngx.say(st["api"][1][1].acc_fail_num)
+
+            checkups.ready_ok("api", cb_ok)
+            local st = checkups.get_status()
+            ngx.say(st["api"][1][1].acc_fail_num)
         ';
     }
 --- request
 GET /t
 --- response_body
-127.0.0.1:12354 ERR
-127.0.0.1:12355 ERR
 1
-0
+2
+2
 --- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+ connection refused|max acc fails reached 127.0.0.1:\d+/
 --- grep_error_log_out
 cb_heartbeat(): failed to connect: 127.0.0.1:12356 connection refused
 cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
-max acc fails reached 127.0.0.1:12354
-max acc fails reached 127.0.0.1:12355
-cb_heartbeat(): failed to connect: 127.0.0.1:12356 connection refused
-cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
-cb_heartbeat(): failed to connect: 127.0.0.1:12356 connection refused
-cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
---- timeout: 10

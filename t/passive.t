@@ -7,7 +7,7 @@ use Cwd qw(cwd);
 
 workers(4);
 
-plan tests => repeat_each() * (blocks() * 3);
+plan tests => repeat_each() * (blocks() * 2 + 1);
 
 my $pwd = cwd();
 
@@ -120,10 +120,6 @@ GET /t
 127.0.0.1:12355
 127.0.0.1:12356
 127.0.0.1:12354
---- grep_error_log eval: qr/max acc fails reached 127.0.0.1:\d+, acc_fails:\d+/
---- grep_error_log_out
-max acc fails reached 127.0.0.1:12354, acc_fails:1
-max acc fails reached 127.0.0.1:12355, acc_fails:1
 
 
 === TEST 3: no server available
@@ -171,9 +167,3 @@ max try exceeded
 max try exceeded
 127.0.0.1:12356
 127.0.0.1:12354
---- grep_error_log eval: qr/max acc fails reached 127.0.0.1:\d+, acc_fails:\d+/
---- grep_error_log_out
-max acc fails reached 127.0.0.1:12354, acc_fails:1
-max acc fails reached 127.0.0.1:12355, acc_fails:1
-max acc fails reached 127.0.0.1:12355, acc_fails:2
-max acc fails reached 127.0.0.1:12356, acc_fails:1

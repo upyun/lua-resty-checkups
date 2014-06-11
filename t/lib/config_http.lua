@@ -15,8 +15,6 @@ _M.status = {
             [502] = false,
         },
     },
-    max_acc_fails = 1,
-    acc_timeout = 5,
 
     cluster = {
         {   -- level 1
