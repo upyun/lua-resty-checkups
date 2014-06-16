@@ -15,7 +15,7 @@ local localtime = ngx.localtime
 local tab_insert = table.insert
 
 
-local _M = { _VERSION = "0.0.1", STATUS_OK = 0, STATUS_ERR = 1 }
+local _M = { _VERSION = "0.01", STATUS_OK = 0, STATUS_ERR = 1 }
 
 local CHECKUP_TIMER_KEY = "checkups:timer"
 local CHECKUP_ACC_FAILS_KEY = "checkups:acc_fails"
@@ -140,8 +140,8 @@ function _M.ready_ok(skey, callback)
         for i=1, len_servers, 1 do
             local srv = cls.servers[idx]
             local key = srv.host .. ":" .. tostring(srv.port)
-            local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX ..
-                                                           key))
+            local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX
+                                                           .. key))
             if peer_status == nil or peer_status.status == _M.STATUS_OK then
                 res, err = callback(srv.host, srv.port)
 
