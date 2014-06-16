@@ -8,7 +8,6 @@ _M.global = {
 
 _M.api = {
     timeout = 2,
-    typ = "general",
 
     cluster = {
         {   -- level 1

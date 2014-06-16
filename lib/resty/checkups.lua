@@ -121,7 +121,6 @@ end
 function _M.ready_ok(skey, callback)
     local ups = upstream.checkups[skey]
     if not ups then
-        ngx.log(ERR, "unknown skey " .. skey)
         return nil, "unknown skey " .. skey
     end
 
@@ -319,7 +318,8 @@ local function cluster_heartbeat(skey)
     for level, cls in ipairs(ups.cluster) do
         for id, srv in ipairs(cls.servers) do
             local key = srv.host .. ":" .. tostring(srv.port)
-            local cb_heartbeat = ups_heartbeat or heartbeat[ups_typ]
+            local cb_heartbeat = ups_heartbeat or heartbeat[ups_typ] or
+                heartbeat["general"]
             local status, err = cb_heartbeat(srv.host, srv.port, ups_timeout,
                                              ups_opts)
             update_peer_status(key, status, err or cjson.null, localtime())
@@ -400,8 +400,8 @@ function _M.prepare_checker(config)
     upstream.checkups = {}
 
     for skey, ups in pairs(config) do
-        if type(ups) == "table" and ups.cluster and #ups.cluster > 0
-            and (ups.typ and heartbeat[ups.typ] or ups.heartbeat) then
+
+        if type(ups) == "table" and ups.cluster and #ups.cluster > 0 then
             upstream.checkups[skey] = table_dup(ups)
             for level, cls in ipairs(upstream.checkups[skey].cluster) do
                 cls.counter = counter(#cls.servers)
