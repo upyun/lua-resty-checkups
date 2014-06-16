@@ -15,11 +15,10 @@ Configure
 ```
 
 --config.lua
-	
+
 _M = {}
 
 _M.global = {
-    positive_check = true,
     checkup_timer_interval = 2,
     checkup_timer_overtime = 10,
 }
@@ -27,8 +26,6 @@ _M.global = {
 _M.api = {
     timeout = 2,
     typ = "general",
-    max_acc_fails = 1,
-    acc_timeout = 30,
 
     cluster = {
         {   -- level 1
@@ -47,7 +44,7 @@ _M.api = {
         },
     },
 }
-	
+
 _M.status = {
     timeout = 2,
     typ = "http",
@@ -57,8 +54,6 @@ _M.status = {
             [502] = false,
         },
     },
-    max_acc_fails = 1,
-    acc_timeout = 30,
 
     cluster = {
         {   -- level 1
@@ -93,7 +88,7 @@ nginx.conf
 
 http {
 	lua_package_path "$pwd/../lua-resty-lock/?.lua;$pwd/lib/?.lua;$pwd/t/lib/?.lua;;";
-    
+
     lua_shared_dict state 10m;
     lua_shared_dict mutex 1m;
     lua_shared_dict locks 1m;
@@ -186,7 +181,3 @@ Methods
 ## get_status
 
 `syntax: status = checkups.get_status()`
-
-
-
-
