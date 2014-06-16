@@ -1,22 +1,21 @@
+-- Copyright (C) 2014 Jing Ye (yejingx), UPYUN Inc.
+-- Copyright (C) 2014 Monkey Zhang (timebug), UPYUN Inc.
+
 local lock = require "resty.lock"
 local cjson = require "cjson.safe"
 
-local tab_insert = table.insert
-local str_sub = string.sub
 local ERR = ngx.ERR
 local WARN = ngx.WARN
+local str_sub = string.sub
 local tcp = ngx.socket.tcp
+local re_find = ngx.re.find
 local mutex = ngx.shared.mutex
 local state = ngx.shared.state
 local localtime = ngx.localtime
-local re_find = ngx.re.find
+local tab_insert = table.insert
 
 
-local _M = {
-    _VERSION = "0.0.1",
-    STATUS_OK = 0,
-    STATUS_ERR = 1,
-}
+local _M = { _VERSION = "0.0.1", STATUS_OK = 0, STATUS_ERR = 1 }
 
 local CHECKUP_TIMER_KEY = "checkups:timer"
 local CHECKUP_ACC_FAILS_KEY = "checkups:acc_fails"
@@ -128,6 +127,9 @@ function _M.ready_ok(skey, callback)
 
     local ups_type = ups.typ
 
+    local res
+    local err = "no upstream available"
+
     for level, cls in ipairs(ups.cluster) do
         local counter = cls.counter
 
@@ -138,35 +140,41 @@ function _M.ready_ok(skey, callback)
         for i=1, len_servers, 1 do
             local srv = cls.servers[idx]
             local key = srv.host .. ":" .. tostring(srv.port)
-            local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX .. key))
-
+            local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX ..
+                                                           key))
             if peer_status == nil or peer_status.status == _M.STATUS_OK then
-                local res = callback(srv.host, srv.port)
+                res, err = callback(srv.host, srv.port)
+
                 if res then
+                    local pass = true
+
                     if ups_type == "http" and type(res) == "table"
                         and res.status then
                         local status = tonumber(res.status)
                         local opts = ups.heartbeat_opts
-                        if opts and opts.statuses and opts.statuses[status] == false then
-                            increase_acc_fail_counter(key)
+                        if opts and opts.statuses and
+                        opts.statuses[status] == false then
+                            pass = false
                         end
                     end
 
-                    return res
+                    if pass then
+                        return res
+                    end
                 end
 
                 increase_acc_fail_counter(key)
 
                 try = try - 1
                 if try < 1 then -- max try times
-                    return nil, "max try exceeded"
+                    return res, err
                 end
             end
             idx = idx % len_servers + 1
         end
     end
 
-    return nil, "no upstream available"
+    return res, err
 end
 
 
@@ -312,7 +320,8 @@ local function cluster_heartbeat(skey)
         for id, srv in ipairs(cls.servers) do
             local key = srv.host .. ":" .. tostring(srv.port)
             local cb_heartbeat = ups_heartbeat or heartbeat[ups_typ]
-            local status, err = cb_heartbeat(srv.host, srv.port, ups_timeout, ups_opts)
+            local status, err = cb_heartbeat(srv.host, srv.port, ups_timeout,
+                                             ups_opts)
             update_peer_status(key, status, err or cjson.null, localtime())
         end
     end
@@ -418,10 +427,12 @@ local function get_upstream_status(skey)
         if servers and type(servers) == "table" and #servers > 0 then
             for id, srv in ipairs(servers) do
                 local key = srv.host .. ":" .. tostring(srv.port)
-                local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX .. key)) or {}
+                local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX ..
+                                                               key)) or {}
                 peer_status.server = key
                 peer_status.acc_fail_num = get_acc_fail_counter(key)
-                if not peer_status.status or peer_status.status == _M.STATUS_OK then
+                if not peer_status.status or
+                peer_status.status == _M.STATUS_OK then
                     peer_status.status = "ok"
                 else
                     peer_status.status = "err"
@@ -461,7 +472,8 @@ function _M.create_checker()
     end
 
     if not upstream.initialized then
-        ngx.log(ERR, "create checker failed, call prepare_checker in init_by_lua")
+        ngx.log(ERR,
+                "create checker failed, call prepare_checker in init_by_lua")
         return
     end
 
@@ -493,5 +505,6 @@ function _M.create_checker()
 
     release_lock(lock)
 end
+
 
 return _M

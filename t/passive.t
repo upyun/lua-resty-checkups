@@ -136,6 +136,7 @@ GET /t
             end
             local cb_err = function(host, port)
                 ngx.say(host .. ":" .. port .. " " .. "ERR")
+                return nil, "max try exceeded"
             end
 
             local ok, err = checkups.ready_ok("api", cb_err)
