@@ -150,7 +150,7 @@ function _M.ready_ok(skey, callback)
                     if ups_type == "http" and type(res) == "table"
                         and res.status then
                         local status = tonumber(res.status)
-                        local opts = ups.heartbeat_opts
+                        local opts = ups.http_opts
                         if opts and opts.statuses and
                         opts.statuses[status] == false then
                             pass = false
@@ -178,9 +178,9 @@ end
 
 
 local heartbeat = {
-    general = function (host, port, timeout, opts)
+    general = function (host, port, ups)
         local sock = tcp()
-        sock:settimeout(timeout * 1000)
+        sock:settimeout(ups.timeout * 1000)
         local ok, err = sock:connect(host, port)
         if not ok then
             ngx.log(ERR, "failed to connect: ", host, ":",
@@ -193,7 +193,7 @@ local heartbeat = {
         return _M.STATUS_OK
     end,
 
-    redis = function (host, port, timeout, opts)
+    redis = function (host, port, ups)
         local ok, redis = pcall(require, "resty.redis")
         if not ok then
             ngx.log(ERR, 'failed to require redis')
@@ -202,7 +202,7 @@ local heartbeat = {
 
         local red = redis:new()
 
-        red:set_timeout(timeout * 1000)
+        red:set_timeout(ups.timeout * 1000)
 
         local ok, err = red:connect(host, port)
         if not ok then
@@ -221,7 +221,7 @@ local heartbeat = {
         return _M.STATUS_OK
     end,
 
-    mysql = function (host, port, timeout, opts)
+    mysql = function (host, port, ups)
         local ok, mysql = pcall(require, "resty.mysql")
         if not ok then
             ngx.log(ERR, 'failed to require mysql')
@@ -234,14 +234,14 @@ local heartbeat = {
             return _M.STATUS_ERR, err
         end
 
-        db:set_timeout(timeout * 1000)
+        db:set_timeout(ups.timeout * 1000)
 
         local ok, err, errno, sqlstate = db:connect{
             host = host,
             port = port,
-            database = opts.name,
-            user = opts.user,
-            password = opts.pass,
+            database = ups.name,
+            user = ups.user,
+            password = ups.pass,
             max_packet_size = 1024*1024
         }
 
@@ -256,15 +256,17 @@ local heartbeat = {
         return _M.STATUS_OK
     end,
 
-    http = function(host, port, timeout, opts)
+    http = function(host, port, ups)
         local sock = tcp()
-        sock:settimeout(timeout * 1000)
+        sock:settimeout(ups.timeout * 1000)
         local ok, err = sock:connect(host, port)
         if not ok then
             ngx.log(ERR, "failed to connect: ", host, ":",
                     tostring(port), " ", err)
             return _M.STATUS_ERR, err
         end
+
+        local opts = ups.http_opts or {}
 
         local req = opts.query
         if not req then
@@ -310,18 +312,17 @@ local heartbeat = {
 
 local function cluster_heartbeat(skey)
     local ups = upstream.checkups[skey]
-    local ups_timeout = ups.timeout or 60
     local ups_typ = ups.typ or "general"
     local ups_heartbeat = ups.heartbeat
-    local ups_opts = ups.heartbeat_opts or {}
+
+    ups.timeout = ups.timeout or 60
 
     for level, cls in ipairs(ups.cluster) do
         for id, srv in ipairs(cls.servers) do
             local key = srv.host .. ":" .. tostring(srv.port)
             local cb_heartbeat = ups_heartbeat or heartbeat[ups_typ] or
                 heartbeat["general"]
-            local status, err = cb_heartbeat(srv.host, srv.port, ups_timeout,
-                                             ups_opts)
+            local status, err = cb_heartbeat(srv.host, srv.port, ups)
             update_peer_status(key, status, err or cjson.null, localtime())
         end
     end

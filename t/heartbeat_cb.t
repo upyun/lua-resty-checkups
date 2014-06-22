@@ -45,7 +45,7 @@ our $HttpConfig = qq{
         local config = require "config_api"
         local checkups = require "resty.checkups"
         -- customize heartbeat callback
-        config.api.heartbeat = function(host, port, timeout, opts)
+        config.api.heartbeat = function(host, port, ups)
             return checkups.STATUS_ERR
         end
         checkups.prepare_checker(config)
