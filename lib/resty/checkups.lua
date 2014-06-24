@@ -270,8 +270,8 @@ local heartbeat = {
 
         local req = opts.query
         if not req then
-            ngx.log(ERR, "http upstream has no query string")
-            return _M.STATUS_ERR
+            sock:set_keepalive()
+            return _M.STATUS_OK
         end
 
         local bytes, err = sock:send(req)
