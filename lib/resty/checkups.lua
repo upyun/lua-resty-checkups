@@ -15,7 +15,7 @@ local localtime = ngx.localtime
 local tab_insert = table.insert
 
 
-local _M = { _VERSION = "0.01", STATUS_OK = 0, STATUS_ERR = 1 }
+local _M = { _VERSION = "0.02", STATUS_OK = 0, STATUS_ERR = 1 }
 
 local CHECKUP_TIMER_KEY = "checkups:timer"
 local CHECKUP_ACC_FAILS_KEY = "checkups:acc_fails"
