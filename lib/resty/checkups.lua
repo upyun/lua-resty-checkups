@@ -270,7 +270,7 @@ local heartbeat = {
 
         local req = opts.query
         if not req then
-            sock:set_keepalive()
+            sock:setkeepalive()
             return _M.STATUS_OK
         end
 
