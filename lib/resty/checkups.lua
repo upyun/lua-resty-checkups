@@ -161,6 +161,11 @@ local function try_cluster(ups, cls, callback)
         end
         idx = idx % len_servers + 1
     end
+
+    -- continue to next level
+    if try > 0 then
+        return nil, nil, true
+    end
 end
 
 
@@ -170,7 +175,7 @@ function _M.ready_ok(skey, callback, cluster_key)
         return nil, "unknown skey " .. skey
     end
 
-    local res, err
+    local res, err, cont
 
     -- try by key
     if cluster_key then
@@ -186,9 +191,14 @@ function _M.ready_ok(skey, callback, cluster_key)
 
     -- try by level
     for level, cls in ipairs(ups.cluster) do
-        res, err = try_cluster(ups, cls, callback)
+        res, err, cont = try_cluster(ups, cls, callback)
         if res then
             return res, err
+        end
+
+        -- continue to next level?
+        if not cont then
+            break
         end
     end
 
