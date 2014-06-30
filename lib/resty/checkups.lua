@@ -118,62 +118,85 @@ local function increase_acc_fail_counter(peer_key)
 end
 
 
-function _M.ready_ok(skey, callback)
+local function try_cluster(ups, cls, callback)
+    local counter = cls.counter
+
+    local idx = counter() -- pre request load-balancing with round-robin
+    local try = cls.try or #cls.servers
+    local len_servers = #cls.servers
+
+    for i=1, len_servers, 1 do
+        local srv = cls.servers[idx]
+        local key = srv.host .. ":" .. tostring(srv.port)
+        local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX
+                                                       .. key))
+        if peer_status == nil or peer_status.status == _M.STATUS_OK then
+            local res, err = callback(srv.host, srv.port)
+
+            if res then
+                local pass = true
+                local ups_type = ups.typ
+
+                if ups_type == "http" and type(res) == "table"
+                    and res.status then
+                    local status = tonumber(res.status)
+                    local opts = ups.http_opts
+                    if opts and opts.statuses and
+                    opts.statuses[status] == false then
+                        pass = false
+                    end
+                end
+
+                if pass then
+                    return res
+                end
+            end
+
+            increase_acc_fail_counter(key)
+
+            try = try - 1
+            if try < 1 then -- max try times
+                return res, err
+            end
+        end
+        idx = idx % len_servers + 1
+    end
+end
+
+
+function _M.ready_ok(skey, callback, cluster_key)
     local ups = upstream.checkups[skey]
     if not ups then
         return nil, "unknown skey " .. skey
     end
 
-    local ups_type = ups.typ
+    local res, err
 
-    local res
-    local err = "no upstream available"
-
-    for level, cls in ipairs(ups.cluster) do
-        local counter = cls.counter
-
-        local idx = counter() -- pre request load-balancing with round-robin
-        local try = cls.try or #cls.servers
-        local len_servers = #cls.servers
-
-        for i=1, len_servers, 1 do
-            local srv = cls.servers[idx]
-            local key = srv.host .. ":" .. tostring(srv.port)
-            local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX
-                                                           .. key))
-            if peer_status == nil or peer_status.status == _M.STATUS_OK then
-                res, err = callback(srv.host, srv.port)
-
-                if res then
-                    local pass = true
-
-                    if ups_type == "http" and type(res) == "table"
-                        and res.status then
-                        local status = tonumber(res.status)
-                        local opts = ups.http_opts
-                        if opts and opts.statuses and
-                        opts.statuses[status] == false then
-                            pass = false
-                        end
-                    end
-
-                    if pass then
-                        return res
-                    end
-                end
-
-                increase_acc_fail_counter(key)
-
-                try = try - 1
-                if try < 1 then -- max try times
-                    return res, err
-                end
+    -- try by key
+    if cluster_key then
+        local cls = ups.cluster[cluster_key]
+        if cls then
+            res, err = try_cluster(ups, cls, callback)
+            if res then
+                return res, err
             end
-            idx = idx % len_servers + 1
+        end
+        return res, err
+    end
+
+    -- try by level
+    for level, cls in ipairs(ups.cluster) do
+        res, err = try_cluster(ups, cls, callback)
+        if res then
+            return res, err
         end
     end
 
-    return res, err
+    if not err then
+        err = "no upstream available"
+    end
+
+    return nil, err
 end
 
 
@@ -317,7 +340,7 @@ local function cluster_heartbeat(skey)
 
     ups.timeout = ups.timeout or 60
 
-    for level, cls in ipairs(ups.cluster) do
+    for level, cls in pairs(ups.cluster) do
         for id, srv in ipairs(cls.servers) do
             local key = srv.host .. ":" .. tostring(srv.port)
             local cb_heartbeat = ups_heartbeat or heartbeat[ups_typ] or
@@ -402,9 +425,10 @@ function _M.prepare_checker(config)
 
     for skey, ups in pairs(config) do
 
-        if type(ups) == "table" and ups.cluster and #ups.cluster > 0 then
+        if type(ups) == "table" and ups.cluster
+            and type(ups.cluster) == "table" then
             upstream.checkups[skey] = table_dup(ups)
-            for level, cls in ipairs(upstream.checkups[skey].cluster) do
+            for level, cls in pairs(upstream.checkups[skey].cluster) do
                 cls.counter = counter(#cls.servers)
             end
         end
@@ -422,7 +446,7 @@ local function get_upstream_status(skey)
 
     local ups_status = {}
 
-    for level, cls in ipairs(ups.cluster) do
+    for level, cls in pairs(ups.cluster) do
         local servers = cls.servers
         ups_status[level] = {}
         if servers and type(servers) == "table" and #servers > 0 then

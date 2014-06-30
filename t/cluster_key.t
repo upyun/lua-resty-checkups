@@ -30,19 +30,29 @@ our $HttpConfig = qq{
     server {
         listen 12355;
         location = /status {
-            return 404;
+            return 502;
         }
     }
 
     server {
-        listen 12360;
+        listen 12356;
         location = /status {
             return 404;
         }
     }
 
+    server {
+        listen 12357;
+        location = /status {
+            content_by_lua '
+                ngx.sleep(3)
+                ngx.status = 200
+            ';
+        }
+    }
+
     init_by_lua '
-        local config = require "config_api"
+        local config = require "config_key"
         local checkups = require "resty.checkups"
         checkups.prepare_checker(config)
     ';
@@ -57,7 +67,7 @@ run_tests();
 
 __DATA__
 
-=== TEST 1: check without passive
+=== TEST 1: http
 --- http_config eval: $::HttpConfig
 --- config
     location = /t {
@@ -65,29 +75,21 @@ __DATA__
         content_by_lua '
             local checkups = require "resty.checkups"
             checkups.create_checker()
-            ngx.sleep(1)
+            ngx.sleep(4)
             local cb_ok = function(host, port)
                 ngx.say(host .. ":" .. port)
                 return 1
             end
-            local cb_err = function(host, port)
-                ngx.say(host .. ":" .. port .. " " .. "ERR")
-                return nil, "max try exceeded"
-            end
 
-            local ok, err = checkups.ready_ok("api", cb_err)
+            local ok, err = checkups.ready_ok("upyun", cb_ok, "c1")
             if err then
                 ngx.say(err)
             end
-            local ok, err = checkups.ready_ok("api", cb_err)
+            local ok, err = checkups.ready_ok("upyun", cb_ok, "c1")
             if err then
                 ngx.say(err)
             end
-            local ok, err = checkups.ready_ok("api", cb_ok)
-            if err then
-                ngx.say(err)
-            end
-            local ok, err = checkups.ready_ok("api", cb_ok)
+            local ok, err = checkups.ready_ok("upyun", cb_ok, "c2")
             if err then
                 ngx.say(err)
             end
@@ -96,23 +98,17 @@ __DATA__
 --- request
 GET /t
 --- response_body
-127.0.0.1:12354 ERR
-127.0.0.1:12355 ERR
-127.0.0.1:12360 ERR
-no upstream available
-127.0.0.1:12355 ERR
-127.0.0.1:12354 ERR
-127.0.0.1:12360 ERR
-no upstream available
 127.0.0.1:12354
-127.0.0.1:12354
---- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+ connection refused/
+127.0.0.1:12356
+127.0.0.1:12356
+--- grep_error_log eval: qr/failed to connect: 127.0.0.1:\d+ connection refused|failed to receive status line from 127.0.0.1:\d+: timeout/
 --- grep_error_log_out
-cb_heartbeat(): failed to connect: 127.0.0.1:12356 connection refused
-cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
+failed to receive status line from 127.0.0.1:12357: timeout
+failed to receive status line from 127.0.0.1:12357: timeout
+--- timeout: 10
 
 
-=== TEST 2: check timer
+=== TEST 2: fail with status code
 --- http_config eval: $::HttpConfig
 --- config
     location = /t {
@@ -120,16 +116,25 @@ cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
         content_by_lua '
             local checkups = require "resty.checkups"
             checkups.create_checker()
-            ngx.sleep(3)
+            ngx.sleep(4)
+            local cb = function(host, port)
+                ngx.say(host .. ":" .. port)
+                return {status = 502}
+            end
+
+            local ok, err  = checkups.ready_ok("upyun", cb, "c1")
+            if err then
+                ngx.say(err)
+            end
         ';
     }
 --- request
 GET /t
 --- response_body
---- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+ connection refused/
+127.0.0.1:12354
+127.0.0.1:12356
+--- grep_error_log eval: qr/failed to connect: 127.0.0.1:\d+ connection refused|failed to receive status line from 127.0.0.1:\d+: timeout/
 --- grep_error_log_out
-cb_heartbeat(): failed to connect: 127.0.0.1:12356 connection refused
-cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
-cb_heartbeat(): failed to connect: 127.0.0.1:12356 connection refused
-cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
+failed to receive status line from 127.0.0.1:12357: timeout
+failed to receive status line from 127.0.0.1:12357: timeout
 --- timeout: 10
