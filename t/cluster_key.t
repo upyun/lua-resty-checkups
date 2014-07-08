@@ -81,15 +81,15 @@ __DATA__
                 return 1
             end
 
-            local ok, err = checkups.ready_ok("upyun", cb_ok, "c1")
+            local ok, err = checkups.ready_ok("upyun", cb_ok, {cluster_key = "c1"})
             if err then
                 ngx.say(err)
             end
-            local ok, err = checkups.ready_ok("upyun", cb_ok, "c1")
+            local ok, err = checkups.ready_ok("upyun", cb_ok, {cluster_key = "c1"})
             if err then
                 ngx.say(err)
             end
-            local ok, err = checkups.ready_ok("upyun", cb_ok, "c2")
+            local ok, err = checkups.ready_ok("upyun", cb_ok, {cluster_key = "c1"})
             if err then
                 ngx.say(err)
             end
@@ -122,7 +122,7 @@ failed to receive status line from 127.0.0.1:12357: timeout
                 return {status = 502}
             end
 
-            local ok, err  = checkups.ready_ok("upyun", cb, "c1")
+            local ok, err  = checkups.ready_ok("upyun", cb, {cluster_key = "c1"})
             if err then
                 ngx.say(err)
             end
