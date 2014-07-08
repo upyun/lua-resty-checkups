@@ -4,15 +4,18 @@
 local lock = require "resty.lock"
 local cjson = require "cjson.safe"
 
+local floor = math.floor
+local str_sub = string.sub
+local lower = string.lower
+local byte = string.byte
+local tab_insert = table.insert
 local ERR = ngx.ERR
 local WARN = ngx.WARN
-local str_sub = string.sub
 local tcp = ngx.socket.tcp
 local re_find = ngx.re.find
 local mutex = ngx.shared.mutex
 local state = ngx.shared.state
 local localtime = ngx.localtime
-local tab_insert = table.insert
 
 
 local _M = { _VERSION = "0.02", STATUS_OK = 0, STATUS_ERR = 1 }
@@ -118,7 +121,94 @@ local function increase_acc_fail_counter(peer_key)
 end
 
 
-local function try_cluster(ups, cls, callback)
+local function check_res(ups, res)
+    if res then
+        local ups_type = ups.typ
+
+        if ups_type == "http" and type(res) == "table"
+            and res.status then
+            local status = tonumber(res.status)
+            local opts = ups.http_opts
+            if opts and opts.statuses and
+            opts.statuses[status] == false then
+                return false
+            end
+        end
+        return true
+    end
+
+    return false
+end
+
+
+local function try_server(ups, srv, callback, try)
+    try = try or 1
+    local key = srv.host .. ":" .. tostring(srv.port)
+    local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX .. key))
+    local res, err
+
+    if peer_status == nil or peer_status.status == _M.STATUS_OK then
+        for i = 1, try, 1 do
+            res, err = callback(srv.host, srv.port)
+            if check_res(ups, res) then
+                return res
+            end
+
+            increase_acc_fail_counter(key)
+        end
+    end
+
+    return nil, err
+end
+
+
+local function hash_key(data)
+    local key = 0
+    local c
+
+    --data = lower(data)
+    for i = 1, #data do
+        c = data:byte(i)
+        key = key * 31 + c
+        key = key % 2^32
+    end
+
+    return key
+end
+
+
+local function try_cluster_consistent_hash(ups, cls, callback, escape_uri)
+    local server_len = #cls.servers
+    if server_len == 0 then
+        return nil, "no server available", true
+    end
+
+    local hash = hash_key(escape_uri)
+    local p = floor((hash % 1024) / floor(1024 / server_len)) % server_len + 1
+
+    -- try hashed node
+    local res, err = try_server(ups, cls.servers[p], callback)
+    if res then
+        return res
+    end
+
+    -- try backup nodes
+    local backup_node_count = cls.backup_node_count or 1
+    local q = (p + hash % backup_node_count + 1) % server_len + 1
+    if p ~= q then
+        local try = cls.try or 5
+        res, err = try_server(ups, cls.servers[q], callback, try - 1)
+        if res then
+            return res
+        end
+    end
+
+    -- continue to next level
+    return nil, err, true
+end
+
+
+local function try_cluster_round_robin(ups, cls, callback)
     local counter = cls.counter
 
     local idx = counter() -- pre request load-balancing with round-robin
@@ -133,23 +223,8 @@ local function try_cluster(ups, cls, callback)
         if peer_status == nil or peer_status.status == _M.STATUS_OK then
             local res, err = callback(srv.host, srv.port)
 
-            if res then
-                local pass = true
-                local ups_type = ups.typ
-
-                if ups_type == "http" and type(res) == "table"
-                    and res.status then
-                    local status = tonumber(res.status)
-                    local opts = ups.http_opts
-                    if opts and opts.statuses and
-                    opts.statuses[status] == false then
-                        pass = false
-                    end
-                end
-
-                if pass then
-                    return res
-                end
+            if check_res(ups, res) then
+                return res
             end
 
             increase_acc_fail_counter(key)
@@ -169,7 +244,19 @@ local function try_cluster(ups, cls, callback)
 end
 
 
-function _M.ready_ok(skey, callback, cluster_key)
+local function try_cluster(ups, cls, callback, opts)
+    local mode = ups.mode
+    if mode == "hash" then
+        local escape_uri = opts.escape_uri or ngx.var.uri
+        return try_cluster_consistent_hash(ups, cls, callback, escape_uri)
+    else
+        return try_cluster_round_robin(ups, cls, callback)
+    end
+end
+
+
+function _M.ready_ok(skey, callback, opts)
+    opts = opts or {}
     local ups = upstream.checkups[skey]
     if not ups then
         return nil, "unknown skey " .. skey
@@ -178,10 +265,10 @@ function _M.ready_ok(skey, callback, cluster_key)
     local res, err, cont
 
     -- try by key
-    if cluster_key then
-        local cls = ups.cluster[cluster_key]
+    if opts.cluster_key then
+        local cls = ups.cluster[opts.cluster_key]
         if cls then
-            res, err = try_cluster(ups, cls, callback)
+            res, err = try_cluster(ups, cls, callback, opts)
             if res then
                 return res, err
             end
@@ -191,7 +278,7 @@ function _M.ready_ok(skey, callback, cluster_key)
 
     -- try by level
     for level, cls in ipairs(ups.cluster) do
-        res, err, cont = try_cluster(ups, cls, callback)
+        res, err, cont = try_cluster(ups, cls, callback, opts)
         if res then
             return res, err
         end
