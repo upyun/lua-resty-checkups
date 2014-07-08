@@ -162,7 +162,7 @@ local function try_server(ups, srv, callback, try)
 end
 
 
-local function hash_key(data)
+local function hash_value(data)
     local key = 0
     local c
 
@@ -177,13 +177,13 @@ local function hash_key(data)
 end
 
 
-local function try_cluster_consistent_hash(ups, cls, callback, escape_uri)
+local function try_cluster_consistent_hash(ups, cls, callback, hash_key)
     local server_len = #cls.servers
     if server_len == 0 then
         return nil, "no server available", true
     end
 
-    local hash = hash_key(escape_uri)
+    local hash = hash_value(hash_key)
     local p = floor((hash % 1024) / floor(1024 / server_len)) % server_len + 1
 
     -- try hashed node
@@ -193,8 +193,8 @@ local function try_cluster_consistent_hash(ups, cls, callback, escape_uri)
     end
 
     -- try backup nodes
-    local backup_node_count = cls.backup_node_count or 1
-    local q = (p + hash % backup_node_count + 1) % server_len + 1
+    local hash_backup_node = cls.hash_backup_node or 1
+    local q = (p + hash % hash_backup_node + 1) % server_len + 1
     if p ~= q then
         local try = cls.try or 5
         res, err = try_server(ups, cls.servers[q], callback, try - 1)
@@ -247,8 +247,8 @@ end
 local function try_cluster(ups, cls, callback, opts)
     local mode = ups.mode
     if mode == "hash" then
-        local escape_uri = opts.escape_uri or ngx.var.uri
-        return try_cluster_consistent_hash(ups, cls, callback, escape_uri)
+        local hash_key = opts.hash_key or ngx.var.uri
+        return try_cluster_consistent_hash(ups, cls, callback, hash_key)
     else
         return try_cluster_round_robin(ups, cls, callback)
     end

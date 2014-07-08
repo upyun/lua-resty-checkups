@@ -85,10 +85,10 @@ __DATA__
                 return 1
             end
 
-            local ok, err = checkups.ready_ok("hash", cb_ok, {escape_uri = "/ab"})
-            local ok, err = checkups.ready_ok("hash", cb_ok, {escape_uri = "/ab"})
-            local ok, err = checkups.ready_ok("hash", cb_ok, {escape_uri = "/abc"})
-            local ok, err = checkups.ready_ok("hash", cb_ok, {escape_uri = "/abc"})
+            local ok, err = checkups.ready_ok("hash", cb_ok, {hash_key = "/ab"})
+            local ok, err = checkups.ready_ok("hash", cb_ok, {hash_key = "/ab"})
+            local ok, err = checkups.ready_ok("hash", cb_ok, {hash_key = "/abc"})
+            local ok, err = checkups.ready_ok("hash", cb_ok, {hash_key = "/abc"})
         ';
     }
 --- request

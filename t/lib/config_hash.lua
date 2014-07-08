@@ -20,7 +20,7 @@ _M.hash = {
     cluster = {
         {   -- level 1
             try = 3,
-            backup_node_count = 1,
+            hash_backup_node = 1,
             servers = {
                 { host = "127.0.0.1", port = 12354 },
                 { host = "127.0.0.1", port = 12355 },
