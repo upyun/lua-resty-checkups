@@ -596,6 +596,21 @@ function _M.get_status()
 end
 
 
+function _M.get_ups_timeout(skey)
+    if not skey then
+        return
+    end
+
+    local ups = upstream.checkups[skey]
+    if not ups then
+        return
+    end
+
+    local timeout = ups.timeout or 5
+    return timeout, ups.send_timeout or timeout, ups.read_timeout or timeout
+end
+
+
 function _M.create_checker()
     local ckey = CHECKUP_TIMER_KEY
     local val, err = mutex:get(ckey)
