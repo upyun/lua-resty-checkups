@@ -51,7 +51,7 @@ local function release_lock(lock)
 end
 
 
-local function update_peer_status(peer_key, status, msg, time)
+local function update_peer_status(peer_key, status, msg, sensibility)
     if status ~= _M.STATUS_OK and status ~= _M.STATUS_ERR then
         return
     end
@@ -65,13 +65,19 @@ local function update_peer_status(peer_key, status, msg, time)
     end
 
     if not old_status then
-        old_status = {}
+        old_status = {
+            status = _M.STATUS_OK,
+            fail_num = 0,
+        }
     else
         old_status = cjson.decode(old_status)
     end
 
-    if old_status.status ~= status then
-        if status == _M.STATUS_ERR then
+    if status == _M.STATUS_OK then
+        old_status.status = _M.STATUS_OK
+        old_status.fail_num = 0
+    else  -- status == _M.STATUS_ERR
+        if old_status.status == _M.STATUS_OK then
             local counter_key = PEER_FAIL_COUNTER_PREFIX .. peer_key
             local ok, err = state:set(counter_key, 0)
             if not ok then
@@ -79,13 +85,21 @@ local function update_peer_status(peer_key, status, msg, time)
             end
         end
 
-        old_status.status = status
-        old_status.msg = msg
-        old_status.lastmodified = time
-        local ok, err = state:set(status_key, cjson.encode(old_status))
-        if not ok then
-            ngx.log(ERR, "failed to set new status " .. err)
+        old_status.fail_num = old_status.fail_num + 1
+
+        if old_status.fail_num >= sensibility then
+            old_status.status = _M.STATUS_ERR
+        else
+            old_status.status = _M.STATUS_OK
         end
+    end
+
+    old_status.msg = msg
+    old_status.lastmodified = localtime()
+
+    local ok, err = state:set(status_key, cjson.encode(old_status))
+    if not ok then
+        ngx.log(ERR, "failed to set new status " .. err)
     end
 end
 
@@ -166,7 +180,7 @@ local function hash_value(data)
     local key = 0
     local c
 
-    --data = lower(data)
+    data = lower(data)
     for i = 1, #data do
         c = data:byte(i)
         key = key * 31 + c
@@ -192,11 +206,11 @@ local function try_cluster_consistent_hash(ups, cls, callback, hash_key)
         return res
     end
 
-    -- try backup nodes
+    -- try backup node
     local hash_backup_node = cls.hash_backup_node or 1
     local q = (p + hash % hash_backup_node + 1) % server_len + 1
     if p ~= q then
-        local try = cls.try or 5
+        local try = cls.try or #cls.servers
         res, err = try_server(ups, cls.servers[q], callback, try - 1)
         if res then
             return res
@@ -434,6 +448,7 @@ local function cluster_heartbeat(skey)
     local ups = upstream.checkups[skey]
     local ups_typ = ups.typ or "general"
     local ups_heartbeat = ups.heartbeat
+    local ups_sensi = ups.sensibility or 1
 
     ups.timeout = ups.timeout or 60
 
@@ -443,7 +458,7 @@ local function cluster_heartbeat(skey)
             local cb_heartbeat = ups_heartbeat or heartbeat[ups_typ] or
                 heartbeat["general"]
             local status, err = cb_heartbeat(srv.host, srv.port, ups)
-            update_peer_status(key, status, err or cjson.null, localtime())
+            update_peer_status(key, status, err or cjson.null, ups_sensi)
         end
     end
 
