@@ -7,7 +7,8 @@ use Cwd qw(cwd);
 
 workers(4);
 
-plan tests => repeat_each() * (blocks() * 2);
+use Test::Nginx::Socket 'no_plan';
+#plan tests => repeat_each() * (blocks() * 2);
 
 my $pwd = cwd();
 
@@ -63,6 +64,8 @@ our $HttpConfig = qq{
 
 };
 
+$ENV{TEST_NGINX_CHECK_LEAK} = 1;
+$ENV{TEST_NGINX_USE_HUP} = 1;
 $ENV{TEST_NGINX_RESOLVER} = '8.8.8.8';
 #no_diff();
 no_long_string();

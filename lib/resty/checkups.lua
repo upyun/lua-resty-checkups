@@ -17,7 +17,6 @@ local mutex = ngx.shared.mutex
 local state = ngx.shared.state
 local localtime = ngx.localtime
 
-
 local _M = { _VERSION = "0.02", STATUS_OK = 0, STATUS_ERR = 1 }
 
 local CHECKUP_TIMER_KEY = "checkups:timer"
@@ -631,12 +630,13 @@ function _M.create_checker()
 
     local lock = get_lock(ckey)
     if not lock then
-        return ngx.log(WARN, "failed to acquire the lock: ", err)
+        ngx.log(WARN, "failed to acquire the lock: ", err)
+        return
     end
 
     val, err = mutex:get(ckey)
     if val then
-        release_lock(ckey)
+        release_lock(lock)
         return
     end
 
