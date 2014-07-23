@@ -20,12 +20,10 @@ local localtime = ngx.localtime
 local _M = { _VERSION = "0.02", STATUS_OK = 0, STATUS_ERR = 1 }
 
 local CHECKUP_TIMER_KEY = "checkups:timer"
-local CHECKUP_ACC_FAILS_KEY = "checkups:acc_fails"
 local CHECKUP_LAST_CHECK_TIME_KEY = "checkups:last_check_time"
 local CHECKUP_TIMER_ALIVE_KEY = "checkups:timer_alive"
 
 local PEER_STATUS_PREFIX = "peer_status:"
-local PEER_FAIL_COUNTER_PREFIX = "peer_fail_counter:"
 
 local upstream = {}
 
@@ -76,14 +74,6 @@ local function update_peer_status(peer_key, status, msg, sensibility)
         old_status.status = _M.STATUS_OK
         old_status.fail_num = 0
     else  -- status == _M.STATUS_ERR
-        if old_status.status == _M.STATUS_OK then
-            local counter_key = PEER_FAIL_COUNTER_PREFIX .. peer_key
-            local ok, err = state:set(counter_key, 0)
-            if not ok then
-                ngx.log(ERR, "failed to clear acc fail counter: ", err)
-            end
-        end
-
         old_status.fail_num = old_status.fail_num + 1
 
         if old_status.fail_num >= sensibility then
@@ -99,37 +89,6 @@ local function update_peer_status(peer_key, status, msg, sensibility)
     local ok, err = state:set(status_key, cjson.encode(old_status))
     if not ok then
         ngx.log(ERR, "failed to set new status " .. err)
-    end
-end
-
-
-local function get_acc_fail_counter(peer_key)
-    local counter_key = PEER_FAIL_COUNTER_PREFIX .. peer_key
-
-    local acc_fail_num, err = state:get(counter_key)
-    if err then
-        ngx.log(ERR, "get acc_fail_num " .. counter_key .. ' ' .. err)
-    end
-
-    return acc_fail_num or 0
-end
-
-
-local function increase_acc_fail_counter(peer_key)
-    local counter_key = PEER_FAIL_COUNTER_PREFIX .. peer_key
-
-    local succ, err = state:add(counter_key, 1)
-    if succ == true then
-        return
-    elseif succ == false and err == "exists" then
-        local ok, err = state:incr(counter_key, 1)
-        if not ok then
-            ngx.log(ERR, "failed to set acc_fail_num " .. err)
-            return
-        end
-    else
-        ngx.log(ERR, "add acc_fail_num " .. counter_key .. ' ' .. err)
-        return
     end
 end
 
@@ -166,8 +125,6 @@ local function try_server(ups, srv, callback, try)
             if check_res(ups, res) then
                 return res
             end
-
-            increase_acc_fail_counter(key)
         end
     end
 
@@ -239,8 +196,6 @@ local function try_cluster_round_robin(ups, cls, callback)
             if check_res(ups, res) then
                 return res
             end
-
-            increase_acc_fail_counter(key)
 
             try = try - 1
             if try < 1 then -- max try times
@@ -566,7 +521,6 @@ local function get_upstream_status(skey)
                 local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX ..
                                                                key)) or {}
                 peer_status.server = key
-                peer_status.acc_fail_num = get_acc_fail_counter(key)
                 if not peer_status.status or
                 peer_status.status == _M.STATUS_OK then
                     peer_status.status = "ok"
