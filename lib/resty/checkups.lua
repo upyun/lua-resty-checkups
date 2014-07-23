@@ -17,7 +17,7 @@ local mutex = ngx.shared.mutex
 local state = ngx.shared.state
 local localtime = ngx.localtime
 
-local _M = { _VERSION = "0.02", STATUS_OK = 0, STATUS_ERR = 1 }
+local _M = { _VERSION = "0.03", STATUS_OK = 0, STATUS_ERR = 1 }
 
 local CHECKUP_TIMER_KEY = "checkups:timer"
 local CHECKUP_LAST_CHECK_TIME_KEY = "checkups:last_check_time"
