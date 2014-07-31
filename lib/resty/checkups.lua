@@ -234,14 +234,17 @@ function _M.ready_ok(skey, callback, opts)
 
     -- try by key
     if opts.cluster_key then
-        local cls = ups.cluster[opts.cluster_key]
-        if cls then
-            res, err = try_cluster(ups, cls, callback, opts)
-            if res then
-                return res, err
+        for _, cls_key in ipairs({opts.cluster_key.default,
+            opts.cluster_key.backup}) do
+            local cls = ups.cluster[cls_key]
+            if cls then
+                res, err = try_cluster(ups, cls, callback, opts)
+                if res then
+                    return res, err
+                end
             end
         end
-        return res, err
+        return nil, err or "no upstream available"
     end
 
     -- try by level

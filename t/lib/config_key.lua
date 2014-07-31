@@ -20,7 +20,7 @@ _M.upyun = {
 
     cluster = {
         c1 = {
-            try = 2,
+            try = 5,
             servers = {
                 { host = "127.0.0.1", port = 12354 },
                 { host = "127.0.0.1", port = 12355 },

@@ -82,15 +82,15 @@ __DATA__
                 return 1
             end
 
-            local ok, err = checkups.ready_ok("upyun", cb_ok, {cluster_key = "c1"})
+            local ok, err = checkups.ready_ok("upyun", cb_ok, {cluster_key = {default="c1", backup="c2"}})
             if err then
                 ngx.say(err)
             end
-            local ok, err = checkups.ready_ok("upyun", cb_ok, {cluster_key = "c1"})
+            local ok, err = checkups.ready_ok("upyun", cb_ok, {cluster_key = {default="c1", backup="c2"}})
             if err then
                 ngx.say(err)
             end
-            local ok, err = checkups.ready_ok("upyun", cb_ok, {cluster_key = "c1"})
+            local ok, err = checkups.ready_ok("upyun", cb_ok, {cluster_key = {default="c1", backup="c2"}})
             if err then
                 ngx.say(err)
             end
@@ -123,7 +123,7 @@ failed to receive status line from 127.0.0.1:12357: timeout
                 return {status = 502}
             end
 
-            local ok, err  = checkups.ready_ok("upyun", cb, {cluster_key = "c1"})
+            local ok, err  = checkups.ready_ok("upyun", cb, {cluster_key = {default="c1", backup="c2"}})
             if err then
                 ngx.say(err)
             end
@@ -134,6 +134,44 @@ GET /t
 --- response_body
 127.0.0.1:12354
 127.0.0.1:12356
+127.0.0.1:12356
+127.0.0.1:12354
+no upstream available
+--- grep_error_log eval: qr/failed to connect: 127.0.0.1:\d+ connection refused|failed to receive status line from 127.0.0.1:\d+: timeout/
+--- grep_error_log_out
+failed to receive status line from 127.0.0.1:12357: timeout
+failed to receive status line from 127.0.0.1:12357: timeout
+--- timeout: 10
+
+
+=== TEST 3: backup cluster
+--- http_config eval: $::HttpConfig
+--- config
+    location = /t {
+        access_log off;
+        content_by_lua '
+            local checkups = require "resty.checkups"
+            checkups.create_checker()
+            ngx.sleep(4)
+            local cb = function(host, port)
+                ngx.say(host .. ":" .. port)
+                return {status = 502}
+            end
+
+            local ok, err  = checkups.ready_ok("upyun", cb, {cluster_key = {default="c1", backup="c2"}})
+            if err then
+                ngx.say(err)
+            end
+        ';
+    }
+--- request
+GET /t
+--- response_body
+127.0.0.1:12354
+127.0.0.1:12356
+127.0.0.1:12356
+127.0.0.1:12354
+no upstream available
 --- grep_error_log eval: qr/failed to connect: 127.0.0.1:\d+ connection refused|failed to receive status line from 127.0.0.1:\d+: timeout/
 --- grep_error_log_out
 failed to receive status line from 127.0.0.1:12357: timeout
