@@ -400,6 +400,10 @@ local heartbeat = {
 
 local function cluster_heartbeat(skey)
     local ups = upstream.checkups[skey]
+    if ups.enable == false then
+        return
+    end
+
     local ups_typ = ups.typ or "general"
     local ups_heartbeat = ups.heartbeat
     local ups_sensi = ups.sensibility or 1
@@ -415,7 +419,6 @@ local function cluster_heartbeat(skey)
             update_peer_status(key, status, err or cjson.null, ups_sensi)
         end
     end
-
 end
 
 
@@ -506,8 +509,8 @@ end
 
 local function get_upstream_status(skey)
     local ups = upstream.checkups[skey]
-    if not ups then
-        return {}
+    if not ups or ups.enable == false then
+        return
     end
 
     local ups_status = {}

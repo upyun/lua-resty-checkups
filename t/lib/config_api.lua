@@ -27,4 +27,16 @@ _M.api = {
     },
 }
 
+_M.acm = {
+    enable = false,
+
+    cluster = {
+        {
+            servers = {
+                { host = "127.0.0.1", port = 1234 },
+            }
+        }
+    }
+}
+
 return _M

@@ -75,6 +75,7 @@ __DATA__
             ngx.say(st["cls:api"][2][1].status)
             ngx.say(st["cls:api"][2][2].status)
             ngx.say(st["cls:api"][2][2].msg)
+            ngx.say(st["cls:acm"])
         ';
     }
 --- request
@@ -87,6 +88,7 @@ connection refused
 ok
 err
 connection refused
+nil
 --- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+ connection refused/
 --- grep_error_log_out
 cb_heartbeat(): failed to connect: 127.0.0.1:12356 connection refused
