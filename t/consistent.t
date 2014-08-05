@@ -40,13 +40,23 @@ our $HttpConfig = qq{
         }
     }
 
+    server {
+        listen 12360;
+        location = /status {
+            return 200;
+        }
+    }
+
+    server {
+        listen 12361;
+        location = /status {
+            return 200;
+        }
+    }
+
     init_by_lua '
-        local config = require "config_api"
+        local config = require "config_hash"
         local checkups = require "resty.checkups"
-        -- customize heartbeat callback
-        config.api.heartbeat = function(host, port, ups)
-            return checkups.STATUS_ERR
-        end
         checkups.prepare_checker(config)
     ';
 
@@ -62,7 +72,7 @@ run_tests();
 
 __DATA__
 
-=== TEST 1: http
+=== TEST 1: consistent hash
 --- http_config eval: $::HttpConfig
 --- config
     location = /t {
@@ -70,26 +80,22 @@ __DATA__
         content_by_lua '
             local checkups = require "resty.checkups"
             checkups.create_checker()
-            ngx.sleep(2)
+            ngx.sleep(1)
             local cb_ok = function(host, port)
                 ngx.say(host .. ":" .. port)
-                return checkups.STATUS_OK
+                return 1
             end
 
-            local ok, err = checkups.ready_ok("api", cb_ok)
-            if err then
-                ngx.say(err)
-            end
-            local ok, err = checkups.ready_ok("api", cb_ok)
-            if err then
-                ngx.say(err)
-            end
+            local ok, err = checkups.ready_ok("hash", cb_ok, {hash_key = "/ab"})
+            local ok, err = checkups.ready_ok("hash", cb_ok, {hash_key = "/ab"})
+            local ok, err = checkups.ready_ok("hash", cb_ok, {hash_key = "/abc"})
+            local ok, err = checkups.ready_ok("hash", cb_ok, {hash_key = "/abc"})
         ';
     }
 --- request
 GET /t
 --- response_body
-no upstream available
-no upstream available
---- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+ connection refused/
---- grep_error_log_out
+127.0.0.1:12354
+127.0.0.1:12354
+127.0.0.1:12354
+127.0.0.1:12354

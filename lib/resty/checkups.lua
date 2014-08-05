@@ -4,26 +4,26 @@
 local lock = require "resty.lock"
 local cjson = require "cjson.safe"
 
+local floor = math.floor
+local str_sub = string.sub
+local lower = string.lower
+local byte = string.byte
+local tab_insert = table.insert
 local ERR = ngx.ERR
 local WARN = ngx.WARN
-local str_sub = string.sub
 local tcp = ngx.socket.tcp
 local re_find = ngx.re.find
 local mutex = ngx.shared.mutex
 local state = ngx.shared.state
 local localtime = ngx.localtime
-local tab_insert = table.insert
 
-
-local _M = { _VERSION = "0.02", STATUS_OK = 0, STATUS_ERR = 1 }
+local _M = { _VERSION = "0.04", STATUS_OK = 0, STATUS_ERR = 1 }
 
 local CHECKUP_TIMER_KEY = "checkups:timer"
-local CHECKUP_ACC_FAILS_KEY = "checkups:acc_fails"
 local CHECKUP_LAST_CHECK_TIME_KEY = "checkups:last_check_time"
 local CHECKUP_TIMER_ALIVE_KEY = "checkups:timer_alive"
 
 local PEER_STATUS_PREFIX = "peer_status:"
-local PEER_FAIL_COUNTER_PREFIX = "peer_fail_counter:"
 
 local upstream = {}
 
@@ -48,7 +48,7 @@ local function release_lock(lock)
 end
 
 
-local function update_peer_status(peer_key, status, msg, time)
+local function update_peer_status(peer_key, status, msg, sensibility)
     if status ~= _M.STATUS_OK and status ~= _M.STATUS_ERR then
         return
     end
@@ -62,118 +62,212 @@ local function update_peer_status(peer_key, status, msg, time)
     end
 
     if not old_status then
-        old_status = {}
+        old_status = {
+            status = _M.STATUS_OK,
+            fail_num = 0,
+            lastmodified = localtime(),
+        }
     else
         old_status = cjson.decode(old_status)
     end
 
-    if old_status.status ~= status then
-        if status == _M.STATUS_ERR then
-            local counter_key = PEER_FAIL_COUNTER_PREFIX .. peer_key
-            local ok, err = state:set(counter_key, 0)
-            if not ok then
-                ngx.log(ERR, "failed to clear acc fail counter: ", err)
+    if status == _M.STATUS_OK then
+        if old_status.status == _M.STATUS_ERR then
+            old_status.lastmodified = localtime()
+            old_status.status = _M.STATUS_OK
+        end
+        old_status.fail_num = 0
+    else  -- status == _M.STATUS_ERR
+        old_status.fail_num = old_status.fail_num + 1
+
+        if old_status.status == _M.STATUS_OK and
+            old_status.fail_num >= sensibility then
+            old_status.status = _M.STATUS_ERR
+            old_status.lastmodified = localtime()
+        end
+    end
+
+    old_status.msg = msg
+
+    local ok, err = state:set(status_key, cjson.encode(old_status))
+    if not ok then
+        ngx.log(ERR, "failed to set new status " .. err)
+    end
+end
+
+
+local function check_res(ups, res)
+    if res then
+        local ups_type = ups.typ
+
+        if ups_type == "http" and type(res) == "table"
+            and res.status then
+            local status = tonumber(res.status)
+            local opts = ups.http_opts
+            if opts and opts.statuses and
+            opts.statuses[status] == false then
+                return false
             end
         end
+        return true
+    end
 
-        old_status.status = status
-        old_status.msg = msg
-        old_status.lastmodified = time
-        local ok, err = state:set(status_key, cjson.encode(old_status))
-        if not ok then
-            ngx.log(ERR, "failed to set new status " .. err)
+    return false
+end
+
+
+local function try_server(ups, srv, callback, try)
+    try = try or 1
+    local key = srv.host .. ":" .. tostring(srv.port)
+    local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX .. key))
+    local res, err
+
+    if peer_status == nil or peer_status.status == _M.STATUS_OK then
+        for i = 1, try, 1 do
+            res, err = callback(srv.host, srv.port)
+            if check_res(ups, res) then
+                return res
+            end
         end
+    end
+
+    return nil, err
+end
+
+
+local function hash_value(data)
+    local key = 0
+    local c
+
+    data = lower(data)
+    for i = 1, #data do
+        c = data:byte(i)
+        key = key * 31 + c
+        key = key % 2^32
+    end
+
+    return key
+end
+
+
+local function try_cluster_consistent_hash(ups, cls, callback, hash_key)
+    local server_len = #cls.servers
+    if server_len == 0 then
+        return nil, "no server available", true
+    end
+
+    local hash = hash_value(hash_key)
+    local p = floor((hash % 1024) / floor(1024 / server_len)) % server_len + 1
+
+    -- try hashed node
+    local res, err = try_server(ups, cls.servers[p], callback)
+    if res then
+        return res
+    end
+
+    -- try backup node
+    local hash_backup_node = cls.hash_backup_node or 1
+    local q = (p + hash % hash_backup_node + 1) % server_len + 1
+    if p ~= q then
+        local try = cls.try or #cls.servers
+        res, err = try_server(ups, cls.servers[q], callback, try - 1)
+        if res then
+            return res
+        end
+    end
+
+    -- continue to next level
+    return nil, err, true
+end
+
+
+local function try_cluster_round_robin(ups, cls, callback)
+    local counter = cls.counter
+
+    local idx = counter() -- pre request load-balancing with round-robin
+    local try = cls.try or #cls.servers
+    local len_servers = #cls.servers
+
+    for i=1, len_servers, 1 do
+        local srv = cls.servers[idx]
+        local key = srv.host .. ":" .. tostring(srv.port)
+        local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX
+                                                       .. key))
+        if peer_status == nil or peer_status.status == _M.STATUS_OK then
+            local res, err = callback(srv.host, srv.port)
+
+            if check_res(ups, res) then
+                return res
+            end
+
+            try = try - 1
+            if try < 1 then -- max try times
+                return res, err
+            end
+        end
+        idx = idx % len_servers + 1
+    end
+
+    -- continue to next level
+    if try > 0 then
+        return nil, nil, true
     end
 end
 
 
-local function get_acc_fail_counter(peer_key)
-    local counter_key = PEER_FAIL_COUNTER_PREFIX .. peer_key
-
-    local acc_fail_num, err = state:get(counter_key)
-    if err then
-        ngx.log(ERR, "get acc_fail_num " .. counter_key .. ' ' .. err)
-    end
-
-    return acc_fail_num or 0
-end
-
-
-local function increase_acc_fail_counter(peer_key)
-    local counter_key = PEER_FAIL_COUNTER_PREFIX .. peer_key
-
-    local succ, err = state:add(counter_key, 1)
-    if succ == true then
-        return
-    elseif succ == false and err == "exists" then
-        local ok, err = state:incr(counter_key, 1)
-        if not ok then
-            ngx.log(ERR, "failed to set acc_fail_num " .. err)
-            return
-        end
+local function try_cluster(ups, cls, callback, opts)
+    local mode = ups.mode
+    if mode == "hash" then
+        local hash_key = opts.hash_key or ngx.var.uri
+        return try_cluster_consistent_hash(ups, cls, callback, hash_key)
     else
-        ngx.log(ERR, "add acc_fail_num " .. counter_key .. ' ' .. err)
-        return
+        return try_cluster_round_robin(ups, cls, callback)
     end
 end
 
 
-function _M.ready_ok(skey, callback)
+function _M.ready_ok(skey, callback, opts)
+    opts = opts or {}
     local ups = upstream.checkups[skey]
     if not ups then
         return nil, "unknown skey " .. skey
     end
 
-    local ups_type = ups.typ
+    local res, err, cont
 
-    local res
-    local err = "no upstream available"
-
-    for level, cls in ipairs(ups.cluster) do
-        local counter = cls.counter
-
-        local idx = counter() -- pre request load-balancing with round-robin
-        local try = cls.try or #cls.servers
-        local len_servers = #cls.servers
-
-        for i=1, len_servers, 1 do
-            local srv = cls.servers[idx]
-            local key = srv.host .. ":" .. tostring(srv.port)
-            local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX
-                                                           .. key))
-            if peer_status == nil or peer_status.status == _M.STATUS_OK then
-                res, err = callback(srv.host, srv.port)
-
+    -- try by key
+    if opts.cluster_key then
+        for _, cls_key in ipairs({opts.cluster_key.default,
+            opts.cluster_key.backup}) do
+            local cls = ups.cluster[cls_key]
+            if cls then
+                res, err = try_cluster(ups, cls, callback, opts)
                 if res then
-                    local pass = true
-
-                    if ups_type == "http" and type(res) == "table"
-                        and res.status then
-                        local status = tonumber(res.status)
-                        local opts = ups.http_opts
-                        if opts and opts.statuses and
-                        opts.statuses[status] == false then
-                            pass = false
-                        end
-                    end
-
-                    if pass then
-                        return res
-                    end
-                end
-
-                increase_acc_fail_counter(key)
-
-                try = try - 1
-                if try < 1 then -- max try times
                     return res, err
                 end
             end
-            idx = idx % len_servers + 1
+        end
+        return nil, err or "no upstream available"
+    end
+
+    -- try by level
+    for level, cls in ipairs(ups.cluster) do
+        res, err, cont = try_cluster(ups, cls, callback, opts)
+        if res then
+            return res, err
+        end
+
+        -- continue to next level?
+        if not cont then
+            break
         end
     end
 
-    return res, err
+    if not err then
+        err = "no upstream available"
+    end
+
+    return nil, err
 end
 
 
@@ -312,21 +406,25 @@ local heartbeat = {
 
 local function cluster_heartbeat(skey)
     local ups = upstream.checkups[skey]
+    if ups.enable == false then
+        return
+    end
+
     local ups_typ = ups.typ or "general"
     local ups_heartbeat = ups.heartbeat
+    local ups_sensi = ups.sensibility or 1
 
     ups.timeout = ups.timeout or 60
 
-    for level, cls in ipairs(ups.cluster) do
+    for level, cls in pairs(ups.cluster) do
         for id, srv in ipairs(cls.servers) do
             local key = srv.host .. ":" .. tostring(srv.port)
             local cb_heartbeat = ups_heartbeat or heartbeat[ups_typ] or
                 heartbeat["general"]
             local status, err = cb_heartbeat(srv.host, srv.port, ups)
-            update_peer_status(key, status, err or cjson.null, localtime())
+            update_peer_status(key, status, err or cjson.null, ups_sensi)
         end
     end
-
 end
 
 
@@ -402,9 +500,10 @@ function _M.prepare_checker(config)
 
     for skey, ups in pairs(config) do
 
-        if type(ups) == "table" and ups.cluster and #ups.cluster > 0 then
+        if type(ups) == "table" and ups.cluster
+            and type(ups.cluster) == "table" then
             upstream.checkups[skey] = table_dup(ups)
-            for level, cls in ipairs(upstream.checkups[skey].cluster) do
+            for level, cls in pairs(upstream.checkups[skey].cluster) do
                 cls.counter = counter(#cls.servers)
             end
         end
@@ -416,13 +515,13 @@ end
 
 local function get_upstream_status(skey)
     local ups = upstream.checkups[skey]
-    if not ups then
-        return {}
+    if not ups or ups.enable == false then
+        return
     end
 
     local ups_status = {}
 
-    for level, cls in ipairs(ups.cluster) do
+    for level, cls in pairs(ups.cluster) do
         local servers = cls.servers
         ups_status[level] = {}
         if servers and type(servers) == "table" and #servers > 0 then
@@ -431,7 +530,6 @@ local function get_upstream_status(skey)
                 local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX ..
                                                                key)) or {}
                 peer_status.server = key
-                peer_status.acc_fail_num = get_acc_fail_counter(key)
                 if not peer_status.status or
                 peer_status.status == _M.STATUS_OK then
                     peer_status.status = "ok"
@@ -460,6 +558,21 @@ function _M.get_status()
 end
 
 
+function _M.get_ups_timeout(skey)
+    if not skey then
+        return
+    end
+
+    local ups = upstream.checkups[skey]
+    if not ups then
+        return
+    end
+
+    local timeout = ups.timeout or 5
+    return timeout, ups.send_timeout or timeout, ups.read_timeout or timeout
+end
+
+
 function _M.create_checker()
     local ckey = CHECKUP_TIMER_KEY
     local val, err = mutex:get(ckey)
@@ -480,12 +593,13 @@ function _M.create_checker()
 
     local lock = get_lock(ckey)
     if not lock then
-        return ngx.log(WARN, "failed to acquire the lock: ", err)
+        ngx.log(WARN, "failed to acquire the lock: ", err)
+        return
     end
 
     val, err = mutex:get(ckey)
     if val then
-        release_lock(ckey)
+        release_lock(lock)
         return
     end
 

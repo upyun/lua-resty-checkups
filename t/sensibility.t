@@ -29,24 +29,21 @@ our $HttpConfig = qq{
     server {
         listen 12355;
         location = /status {
-            return 502;
+            return 200;
         }
     }
 
     server {
-        listen 12356;
+        listen 12360;
         location = /status {
-            return 404;
+            return 200;
         }
     }
 
     init_by_lua '
         local config = require "config_api"
         local checkups = require "resty.checkups"
-        -- customize heartbeat callback
-        config.api.heartbeat = function(host, port, ups)
-            return checkups.STATUS_ERR
-        end
+        config.api.sensibility = 2
         checkups.prepare_checker(config)
     ';
 
@@ -62,7 +59,7 @@ run_tests();
 
 __DATA__
 
-=== TEST 1: http
+=== TEST 1: get status
 --- http_config eval: $::HttpConfig
 --- config
     location = /t {
@@ -70,26 +67,51 @@ __DATA__
         content_by_lua '
             local checkups = require "resty.checkups"
             checkups.create_checker()
-            ngx.sleep(2)
-            local cb_ok = function(host, port)
-                ngx.say(host .. ":" .. port)
-                return checkups.STATUS_OK
-            end
+            ngx.sleep(1)
+            local st = checkups.get_status()
+            ngx.say(st["cls:api"][1][1].status)
+            ngx.say(st["cls:api"][1][1].fail_num)
+            ngx.say(st["cls:api"][1][2].status)
+            ngx.say(st["cls:api"][1][2].fail_num)
+            ngx.say(st["cls:api"][1][3].status)
+            ngx.say(st["cls:api"][1][3].fail_num)
+            ngx.say(st["cls:api"][1][3].msg)
+            ngx.say(st["cls:api"][2][1].status)
+            ngx.say(st["cls:api"][2][2].status)
+            ngx.say(st["cls:api"][2][2].msg)
 
-            local ok, err = checkups.ready_ok("api", cb_ok)
-            if err then
-                ngx.say(err)
-            end
-            local ok, err = checkups.ready_ok("api", cb_ok)
-            if err then
-                ngx.say(err)
-            end
+            ngx.sleep(2)
+
+            st = checkups.get_status()
+            ngx.say(st["cls:api"][1][1].status)
+            ngx.say(st["cls:api"][1][1].fail_num)
+            ngx.say(st["cls:api"][1][3].status)
+            ngx.say(st["cls:api"][1][3].fail_num)
+            ngx.say(st["cls:api"][1][3].msg)
         ';
     }
 --- request
 GET /t
 --- response_body
-no upstream available
-no upstream available
+ok
+0
+ok
+0
+ok
+1
+connection refused
+ok
+ok
+connection refused
+ok
+0
+err
+2
+connection refused
 --- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+ connection refused/
 --- grep_error_log_out
+cb_heartbeat(): failed to connect: 127.0.0.1:12356 connection refused
+cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
+cb_heartbeat(): failed to connect: 127.0.0.1:12356 connection refused
+cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
+--- timeout: 10

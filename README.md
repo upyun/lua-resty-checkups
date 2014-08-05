@@ -79,6 +79,50 @@ return _M
 
 ```
 
+
+#### 集群配置
+
+> 以 Newworld 为例
+
+```
+_M.newworld = {
+    timeout = 5,
+    read_timeout = 30,
+    send_timeout = 60,
+
+    cluster = {
+        {   -- level 1
+            try = 2,
+            servers = {
+                { host = "127.0.0.1", port = 8080 },
+            }
+        },
+        {   -- level 2
+            servers = {
+                { host = "192.168.0.71", port = 8080 },
+                { host = "192.168.0.72", port = 8080 },
+                { host = "192.168.0.73", port = 8080 },
+            }
+        },
+    },
+}
+```
+
+> timeout, read_timeout, send_timeout
+
+分别表示连接超时，读超时和写超时，特别地，当没有明确设置 read_timeout 或 send_timeout 的情况下， 其值都以 timeout 为准.
+
+> cluster = { { -- level 1 }, { -- level 2 } }
+
+这是 Kuzan 特有的一个集群配置结构，目前支持一些简单的容灾（主备及重试机制）和负载均衡（Round Robin）处理，如上所示，可以按优先级配置多个 level，每个 level 下可以配置一个 server 集群，Kuzan 会根据 level 优先级默认总是使用 level 1 的集群，只有当 level 1 的集群全部可不用的时候，自动切换到 level 2，以此类推; 因此，此时要配置简单的主备模式就很方便了，配置两个 level，每个  level 一台 server 即可.
+
+> { try = 2, servers = { { host = "127.0.0.1", port = 8080 } } }
+
+这是 cluster 每层 level 的配置结构，其中 servers 中可配置多个后端，目前后端配置只支持 host/port 形式，接下来会考虑对  unixsock 形式的支持，另外多台 server 默认会进行简单地 Round Robin 轮询，实现一定地负载均衡效果；try 表示失败重试几次，默认是 servers 的数量（跟 Nginx 的 upstream 非常类似），当某次请求检测到该层 level 的某台 server 不可用的时候，会切换到下一台进行重试，若一直失败，则重复这个过程，但最多只会重试 try 次，特别地，若某一层的 try 设置的值大于其 servers 的数量，那么，当该层的 servers 均不可用的情况下，level 会自动切换到下一层（如有有的话），如上配置所示，level 1 只配置了 1 台 server，但 try 设置的是 2，那么当这台唯一的 server 不可用的时候，当前请求的重试机制会切换到下一层的 level，即 level 2，此处配置了 3 个 server， try 默认是 server 个数 3，那么此时就完全按照 level 2 的规则来进行重试和负载均衡了.
+
+另外，这个集群配置结构在结合主动健康检查的情况下，会动态调整，例如若 level 1 中某台 server 或者整个 level 1 不可用的时候，会自动临时剔除这些不可用的配置，重新排列配置结构，并且仍然会按照以上规则进行处理.
+
+
 Synopsis
 ========
 

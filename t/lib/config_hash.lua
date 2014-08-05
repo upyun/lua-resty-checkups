@@ -6,12 +6,21 @@ _M.global = {
     checkup_timer_overtime = 10,
 }
 
-_M.api = {
+_M.hash = {
     timeout = 2,
+    typ = "http",
+    mode = "hash",
+    http_opts = {
+        query = "GET /status HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        statuses = {
+            [502] = false,
+        },
+    },
 
     cluster = {
         {   -- level 1
-            try = 2,
+            try = 3,
+            hash_backup_node = 1,
             servers = {
                 { host = "127.0.0.1", port = 12354 },
                 { host = "127.0.0.1", port = 12355 },
@@ -25,18 +34,6 @@ _M.api = {
             }
         },
     },
-}
-
-_M.acm = {
-    enable = false,
-
-    cluster = {
-        {
-            servers = {
-                { host = "127.0.0.1", port = 1234 },
-            }
-        }
-    }
 }
 
 return _M

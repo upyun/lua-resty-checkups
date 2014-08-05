@@ -2,12 +2,11 @@
 use lib 'lib';
 use Test::Nginx::Socket;
 use Cwd qw(cwd);
+use Test::Nginx::Socket 'no_plan';
 
 #repeat_each(2);
 
 workers(4);
-
-plan tests => repeat_each() * (blocks() * 3);
 
 my $pwd = cwd();
 
@@ -49,6 +48,8 @@ our $HttpConfig = qq{
 
 };
 
+$ENV{TEST_NGINX_CHECK_LEAK} = 1;
+$ENV{TEST_NGINX_USE_HUP} = 1;
 $ENV{TEST_NGINX_RESOLVER} = '8.8.8.8';
 #no_diff();
 no_long_string();
@@ -74,6 +75,7 @@ __DATA__
             ngx.say(st["cls:api"][2][1].status)
             ngx.say(st["cls:api"][2][2].status)
             ngx.say(st["cls:api"][2][2].msg)
+            ngx.say(st["cls:acm"])
         ';
     }
 --- request
@@ -86,6 +88,7 @@ connection refused
 ok
 err
 connection refused
+nil
 --- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+ connection refused/
 --- grep_error_log_out
 cb_heartbeat(): failed to connect: 127.0.0.1:12356 connection refused
@@ -181,45 +184,3 @@ cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
 cb_heartbeat(): failed to connect: 127.0.0.1:12356 connection refused
 cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
 --- timeout: 10
-
-
-=== TEST 4: acc fail
---- http_config eval: $::HttpConfig
---- config
-    location = /t {
-        access_log off;
-        content_by_lua '
-            local checkups = require "resty.checkups"
-            checkups.create_checker()
-            ngx.sleep(1)
-
-            local cb_err = function(host, port)
-                return
-            end
-            local cb_ok = function(host, port)
-                return 1
-            end
-
-            checkups.ready_ok("api", cb_err)
-            local st = checkups.get_status()
-            ngx.say(st["cls:api"][1][1].acc_fail_num)
-
-            checkups.ready_ok("api", cb_err)
-            local st = checkups.get_status()
-            ngx.say(st["cls:api"][1][1].acc_fail_num)
-
-            checkups.ready_ok("api", cb_ok)
-            local st = checkups.get_status()
-            ngx.say(st["cls:api"][1][1].acc_fail_num)
-        ';
-    }
---- request
-GET /t
---- response_body
-1
-2
-2
---- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+ connection refused|max acc fails reached 127.0.0.1:\d+/
---- grep_error_log_out
-cb_heartbeat(): failed to connect: 127.0.0.1:12356 connection refused
-cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
