@@ -65,26 +65,29 @@ local function update_peer_status(peer_key, status, msg, sensibility)
         old_status = {
             status = _M.STATUS_OK,
             fail_num = 0,
+            lastmodified = localtime(),
         }
     else
         old_status = cjson.decode(old_status)
     end
 
     if status == _M.STATUS_OK then
-        old_status.status = _M.STATUS_OK
+        if old_status.status == _M.STATUS_ERR then
+            old_status.lastmodified = localtime()
+            old_status.status = _M.STATUS_OK
+        end
         old_status.fail_num = 0
     else  -- status == _M.STATUS_ERR
         old_status.fail_num = old_status.fail_num + 1
 
-        if old_status.fail_num >= sensibility then
+        if old_status.status == _M.STATUS_OK and
+            old_status.fail_num >= sensibility then
             old_status.status = _M.STATUS_ERR
-        else
-            old_status.status = _M.STATUS_OK
+            old_status.lastmodified = localtime()
         end
     end
 
     old_status.msg = msg
-    old_status.lastmodified = localtime()
 
     local ok, err = state:set(status_key, cjson.encode(old_status))
     if not ok then
