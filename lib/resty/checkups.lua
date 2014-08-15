@@ -17,7 +17,8 @@ local mutex = ngx.shared.mutex
 local state = ngx.shared.state
 local localtime = ngx.localtime
 
-local _M = { _VERSION = "0.04", STATUS_OK = 0, STATUS_ERR = 1 }
+local _M = { _VERSION = "0.04",
+             STATUS_OK = 0, STATUS_ERR = 1, STATUS_UNSTABLE = 2 }
 
 local CHECKUP_TIMER_KEY = "checkups:timer"
 local CHECKUP_LAST_CHECK_TIME_KEY = "checkups:last_check_time"
@@ -49,7 +50,7 @@ end
 
 
 local function update_peer_status(peer_key, status, msg, sensibility)
-    if status ~= _M.STATUS_OK and status ~= _M.STATUS_ERR then
+    if not status then
         return
     end
 
@@ -72,17 +73,17 @@ local function update_peer_status(peer_key, status, msg, sensibility)
     end
 
     if status == _M.STATUS_OK then
-        if old_status.status == _M.STATUS_ERR then
+        if old_status.status ~= _M.STATUS_OK then
             old_status.lastmodified = localtime()
             old_status.status = _M.STATUS_OK
         end
         old_status.fail_num = 0
-    else  -- status == _M.STATUS_ERR
+    else  -- status == _M.STATUS_ERR or _M.STATUS_UNSTABLE
         old_status.fail_num = old_status.fail_num + 1
 
         if old_status.status == _M.STATUS_OK and
             old_status.fail_num >= sensibility then
-            old_status.status = _M.STATUS_ERR
+            old_status.status = status
             old_status.lastmodified = localtime()
         end
     end
@@ -122,7 +123,7 @@ local function try_server(ups, srv, callback, try)
     local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX .. key))
     local res, err
 
-    if peer_status == nil or peer_status.status == _M.STATUS_OK then
+    if peer_status == nil or peer_status.status ~= _M.STATUS_ERR then
         for i = 1, try, 1 do
             res, err = callback(srv.host, srv.port)
             if check_res(ups, res) then
@@ -193,7 +194,7 @@ local function try_cluster_round_robin(ups, cls, callback)
         local key = srv.host .. ":" .. tostring(srv.port)
         local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX
                                                        .. key))
-        if peer_status == nil or peer_status.status == _M.STATUS_OK then
+        if peer_status == nil or peer_status.status ~= _M.STATUS_ERR then
             local res, err = callback(srv.host, srv.port)
 
             if check_res(ups, res) then
@@ -416,13 +417,33 @@ local function cluster_heartbeat(skey)
 
     ups.timeout = ups.timeout or 60
 
+    local last = 0
+    for level, cls in pairs(ups.cluster) do
+        if cls.servers and #cls.servers > 0 then
+            last = last + #cls.servers
+        end
+    end
+
+    local pos = 0
+    local no_available = true
     for level, cls in pairs(ups.cluster) do
         for id, srv in ipairs(cls.servers) do
+            pos = pos + 1
             local key = srv.host .. ":" .. tostring(srv.port)
             local cb_heartbeat = ups_heartbeat or heartbeat[ups_typ] or
                 heartbeat["general"]
             local status, err = cb_heartbeat(srv.host, srv.port, ups)
-            update_peer_status(key, status, err or cjson.null, ups_sensi)
+
+            if status == _M.STATUS_OK then
+                no_available = false
+            end
+
+            if pos == last and no_available then
+                update_peer_status(key, _M.STATUS_UNSTABLE, err or cjson.null,
+                                   ups_sensi)
+            else
+                update_peer_status(key, status, err or cjson.null, ups_sensi)
+            end
         end
     end
 end
@@ -533,8 +554,10 @@ local function get_upstream_status(skey)
                 if not peer_status.status or
                 peer_status.status == _M.STATUS_OK then
                     peer_status.status = "ok"
-                else
+                elseif peer_status.status == _M.STATUS_ERR then
                     peer_status.status = "err"
+                else
+                    peer_status.status = "unstable"
                 end
                 tab_insert(ups_status[level], peer_status)
             end

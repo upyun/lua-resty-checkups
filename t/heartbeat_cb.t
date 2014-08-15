@@ -45,7 +45,7 @@ our $HttpConfig = qq{
         local checkups = require "resty.checkups"
         -- customize heartbeat callback
         config.api.heartbeat = function(host, port, ups)
-            return checkups.STATUS_ERR
+            return checkups.STATUS_ERR, "down"
         end
         checkups.prepare_checker(config)
     ';
@@ -84,12 +84,21 @@ __DATA__
             if err then
                 ngx.say(err)
             end
+
+            local st = checkups.get_status()
+            ngx.say(st["cls:api"][2][1].status)
+            ngx.say(st["cls:api"][2][1].msg)
+            ngx.say(st["cls:api"][2][2].status)
+            ngx.say(st["cls:api"][2][2].msg)
         ';
     }
 --- request
 GET /t
 --- response_body
-no upstream available
-no upstream available
---- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+ connection refused/
---- grep_error_log_out
+127.0.0.1:12361
+127.0.0.1:12361
+err
+down
+unstable
+down
+--- no_error_log
