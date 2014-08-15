@@ -13,6 +13,7 @@ local ERR = ngx.ERR
 local WARN = ngx.WARN
 local tcp = ngx.socket.tcp
 local re_find = ngx.re.find
+local re_match = ngx.re.match
 local mutex = ngx.shared.mutex
 local state = ngx.shared.state
 local localtime = ngx.localtime
@@ -488,6 +489,7 @@ local function active_checkup(premature)
     end
 end
 
+
 local function table_dup(ori_tab)
     if type(ori_tab) ~= "table" then
         return ori_tab
@@ -501,6 +503,44 @@ local function table_dup(ori_tab)
         end
     end
     return new_tab
+end
+
+
+local function extract_servers_from_upstream(cls)
+    local up_key = cls.upstream
+    if not up_key then
+        return
+    end
+
+    cls.servers = cls.servers or {}
+
+    local ok, up = pcall(require, "ngx.upstream")
+    if not ok then
+        ngx.log(ngx.ERR, "ngx_upstream_lua module required")
+        return
+    end
+
+    local ups_backup = cls.upstream_only_backup
+    local srvs_getter = up.get_primary_peers
+    if ups_backup then
+        srvs_getter = up.get_backup_peers
+    end
+    local srvs, err = srvs_getter(up_key)
+    if not srvs and err then
+        ngx.log(ngx.ERR, "failed to get servers in upstream ", err)
+        return
+    end
+
+    for _, srv in ipairs(srvs) do
+        local m = re_match(srv.name,
+            "([0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+)(?::([0-9]+))?")
+        if not m then
+            ngx.log(ngx.ERR, "invalid server name ", srv.name)
+            return
+        end
+
+        tab_insert(cls.servers, { host=m[1], port=m[2] or 80 })
+    end
 end
 
 
@@ -520,11 +560,11 @@ function _M.prepare_checker(config)
     upstream.checkups = {}
 
     for skey, ups in pairs(config) do
-
         if type(ups) == "table" and ups.cluster
             and type(ups.cluster) == "table" then
             upstream.checkups[skey] = table_dup(ups)
             for level, cls in pairs(upstream.checkups[skey].cluster) do
+                extract_servers_from_upstream(cls)
                 cls.counter = counter(#cls.servers)
             end
         end
