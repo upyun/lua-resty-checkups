@@ -555,6 +555,7 @@ function _M.prepare_checker(config)
         end
     end
 
+    upstream.start_time = localtime()
     upstream.checkup_timer_interval = config.global.checkup_timer_interval
     upstream.checkup_timer_overtime = config.global.checkup_timer_overtime
     upstream.checkups = {}
@@ -616,6 +617,10 @@ function _M.get_status()
     local last_check_time = state:get(CHECKUP_LAST_CHECK_TIME_KEY) or cjson.null
     all_status.last_check_time = last_check_time
     all_status.checkup_timer_alive = state:get(CHECKUP_TIMER_ALIVE_KEY) or false
+    all_status.start_time = upstream.start_time
+    if ngx.var.conf_hash then
+        all_status.conf_hash = ngx.var.conf_hash
+    end
 
     return all_status
 end
