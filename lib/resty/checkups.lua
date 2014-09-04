@@ -18,7 +18,7 @@ local mutex = ngx.shared.mutex
 local state = ngx.shared.state
 local localtime = ngx.localtime
 
-local _M = { _VERSION = "0.05",
+local _M = { _VERSION = "0.06",
              STATUS_OK = 0, STATUS_ERR = 1, STATUS_UNSTABLE = 2 }
 
 local CHECKUP_TIMER_KEY = "checkups:timer"
@@ -28,6 +28,8 @@ local CHECKUP_TIMER_ALIVE_KEY = "checkups:timer_alive"
 local PEER_STATUS_PREFIX = "peer_status:"
 
 local upstream = {}
+local peer_id_dict = {}
+local ups_status_timer_created
 
 
 local function get_lock(key)
@@ -490,6 +492,70 @@ local function active_checkup(premature)
 end
 
 
+local function ups_status_checker(permature)
+    if permature then
+        return
+    end
+
+    local ok, up = pcall(require, "ngx.upstream")
+    if not ok then
+        ngx.log(ngx.ERR, "ngx_upstream_lua module required")
+        return
+    end
+
+    local ups_status = {}
+    local names = up.get_upstreams()
+    -- get current upstream down status
+    for _, name in ipairs(names) do
+        local srvs = up.get_primary_peers(name)
+        for _, srv in ipairs(srvs) do
+            ups_status[srv.name] = srv.down and _M.STATUS_ERR or _M.STATUS_OK
+        end
+
+        srvs = up.get_backup_peers(name)
+        for _, srv in ipairs(srvs) do
+            ups_status[srv.name] = srv.down and _M.STATUS_ERR or _M.STATUS_OK
+        end
+    end
+
+    for skey, ups in pairs(upstream.checkups) do
+        for level, cls in pairs(ups.cluster) do
+            if not cls.upstream then
+                break
+            end
+
+            for _, srv in pairs(cls.servers) do
+                local peer_key = srv.host .. ':' .. srv.port
+                local status_key = PEER_STATUS_PREFIX .. peer_key
+
+                local peer_status, err = state:get(status_key)
+                if peer_status then
+                    local st = cjson.decode(peer_status)
+                    local up_st = ups_status[peer_key]
+                    if st.status ~= _M.STATUS_UNSTABLE and up_st and
+                        st.status ~= up_st then
+                        local up_id = peer_id_dict[peer_key]
+                        local down = st.status == _M.STATUS_ERR and true or false
+                        local ok, err = up.set_peer_down(cls.upstream, up_id.backup, up_id.id, down)
+                        if not ok then
+                            ngx.log(ngx.ERR, "failed to set peer down", err)
+                        end
+                    end
+                elseif err then
+                    ngx.log(WARN, "get peer status error " .. status_key .. ' ' .. err)
+                end
+            end
+        end
+    end
+
+    local interval = upstream.ups_status_timer_interval
+    local ok, err = ngx.timer.at(interval, ups_status_checker)
+    if not ok then
+        ngx.log(WARN, "failed to create ups_status_checker: ", err)
+    end
+end
+
+
 local function table_dup(ori_tab)
     if type(ori_tab) ~= "table" then
         return ori_tab
@@ -539,7 +605,10 @@ local function extract_servers_from_upstream(cls)
             return
         end
 
-        tab_insert(cls.servers, { host=m[1], port=m[2] or 80 })
+        local host, port = m[1], m[2] or 80
+        peer_id_dict[host .. ':' .. port] = { id = srv.id,
+            backup = ups_backup and true or false}
+        tab_insert(cls.servers, { host=host, port=port })
     end
 end
 
@@ -560,6 +629,8 @@ function _M.prepare_checker(config)
     upstream.checkup_timer_interval = config.global.checkup_timer_interval
     upstream.checkup_timer_overtime = config.global.checkup_timer_overtime
     upstream.checkups = {}
+    upstream.ups_status_sync_enable = config.global.ups_status_sync_enable
+    upstream.ups_status_timer_interval = config.global.ups_status_timer_interval or 5
 
     for skey, ups in pairs(config) do
         if type(ups) == "table" and ups.cluster
@@ -675,6 +746,15 @@ function _M.create_checker()
     if not ok then
         ngx.log(ngx.WARN, "failed to create timer: ", err)
         return
+    end
+
+    if upstream.ups_status_sync_enable and not ups_status_timer_created then
+        local ok, err = ngx.timer.at(0, ups_status_checker)
+        if not ok then
+            ngx.log(ngx.WARN, "failed to create ups_status_checker: ", err)
+            return
+        end
+        ups_status_timer_created = true
     end
 
     local overtime = upstream.checkup_timer_overtime
