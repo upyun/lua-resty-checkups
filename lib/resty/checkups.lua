@@ -532,10 +532,10 @@ local function ups_status_checker(permature)
                 if peer_status then
                     local st = cjson.decode(peer_status)
                     local up_st = ups_status[peer_key]
-                    if st.status ~= _M.STATUS_UNSTABLE and up_st and
-                        st.status ~= up_st then
+                    if (st.status == _M.STATUS_UNSTABLE and up_st == _M.STATUS_ERR) or
+                        (st.status ~= _M.STATUS_UNSTABLE and up_st and st.status ~= up_st) then
                         local up_id = peer_id_dict[peer_key]
-                        local down = st.status == _M.STATUS_ERR and true or false
+                        local down = up_st == _M.STATUS_OK and true or false
                         local ok, err = up.set_peer_down(cls.upstream, up_id.backup, up_id.id, down)
                         if not ok then
                             ngx.log(ngx.ERR, "failed to set peer down", err)
@@ -551,6 +551,7 @@ local function ups_status_checker(permature)
     local interval = upstream.ups_status_timer_interval
     local ok, err = ngx.timer.at(interval, ups_status_checker)
     if not ok then
+        ups_status_timer_created = false
         ngx.log(WARN, "failed to create ups_status_checker: ", err)
     end
 end
