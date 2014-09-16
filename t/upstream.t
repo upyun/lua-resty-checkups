@@ -27,26 +27,22 @@ our $HttpConfig = qq{
     }
 
     server {
-        listen 12355;
-        location = /status {
-            return 502;
-        }
-    }
-
-    server {
         listen 12356;
         location = /status {
             return 404;
         }
     }
 
-    init_by_lua '
-        local config = require "config_api"
+    upstream api.com {
+        server 127.0.0.1:12354;
+        server 127.0.0.1:12355;
+        server 127.0.0.1:12356 backup;
+        server 127.0.0.1:12357 backup;
+    }
+
+    init_worker_by_lua '
+        local config = require "config_ups"
         local checkups = require "resty.checkups"
-        -- customize heartbeat callback
-        config.api.heartbeat = function(host, port, ups)
-            return checkups.STATUS_ERR, "down"
-        end
         checkups.prepare_checker(config)
     ';
 
@@ -62,43 +58,44 @@ run_tests();
 
 __DATA__
 
-=== TEST 1: http
+=== TEST 1: set upstream down
 --- http_config eval: $::HttpConfig
 --- config
     location = /t {
         access_log off;
         content_by_lua '
+            local upstream = require "ngx.upstream"
             local checkups = require "resty.checkups"
+
+            local srvs = upstream.get_primary_peers("api.com")
+            ngx.say(srvs[1].down)
+            ngx.say(srvs[2].down)
+
+            local srvs = upstream.get_backup_peers("api.com")
+            ngx.say(srvs[1].down)
+            ngx.say(srvs[2].down)
+
             checkups.create_checker()
             ngx.sleep(2)
-            local cb_ok = function(host, port)
-                ngx.say(host .. ":" .. port)
-                return checkups.STATUS_OK
-            end
 
-            local ok, err = checkups.ready_ok("api", cb_ok)
-            if err then
-                ngx.say(err)
-            end
-            local ok, err = checkups.ready_ok("api", cb_ok)
-            if err then
-                ngx.say(err)
-            end
+            local srvs = upstream.get_primary_peers("api.com")
+            ngx.say(srvs[1].down)
+            ngx.say(srvs[2].down)
 
-            local st = checkups.get_status()
-            ngx.say(st["cls:api"][2][1].status)
-            ngx.say(st["cls:api"][2][1].msg)
-            ngx.say(st["cls:api"][2][2].status)
-            ngx.say(st["cls:api"][2][2].msg)
+            local srvs = upstream.get_backup_peers("api.com")
+            ngx.say(srvs[1].down)
+            ngx.say(srvs[2].down)
         ';
     }
 --- request
 GET /t
 --- response_body
-127.0.0.1:12361
-127.0.0.1:12361
-err
-down
-unstable
-down
---- no_error_log
+nil
+nil
+nil
+nil
+nil
+true
+nil
+true
+--- timeout: 10
