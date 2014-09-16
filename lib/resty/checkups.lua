@@ -532,17 +532,20 @@ local function ups_status_checker(permature)
                 if peer_status then
                     local st = cjson.decode(peer_status)
                     local up_st = ups_status[peer_key]
-                    if (st.status == _M.STATUS_UNSTABLE and up_st == _M.STATUS_ERR) or
-                        (st.status ~= _M.STATUS_UNSTABLE and up_st and st.status ~= up_st) then
+                    local unstable = st.status == _M.STATUS_UNSTABLE
+                    if (unstable and up_st == _M.STATUS_ERR) or
+                    (not unstable and up_st and st.status ~= up_st) then
                         local up_id = peer_id_dict[peer_key]
                         local down = up_st == _M.STATUS_OK and true or false
-                        local ok, err = up.set_peer_down(cls.upstream, up_id.backup, up_id.id, down)
+                        local ok, err = up.set_peer_down(
+                            cls.upstream, up_id.backup, up_id.id, down)
                         if not ok then
                             ngx.log(ngx.ERR, "failed to set peer down", err)
                         end
                     end
                 elseif err then
-                    ngx.log(WARN, "get peer status error " .. status_key .. ' ' .. err)
+                    ngx.log(WARN, "get peer status error " .. status_key .. ' '
+                                .. err)
                 end
             end
         end
@@ -627,11 +630,12 @@ function _M.prepare_checker(config)
 
     upstream.start_time = localtime()
     upstream.conf_hash = config.global.conf_hash
-    upstream.checkup_timer_interval = config.global.checkup_timer_interval
-    upstream.checkup_timer_overtime = config.global.checkup_timer_overtime
+    upstream.checkup_timer_interval = config.global.checkup_timer_interval or 5
+    upstream.checkup_timer_overtime = config.global.checkup_timer_overtime or 60
     upstream.checkups = {}
     upstream.ups_status_sync_enable = config.global.ups_status_sync_enable
-    upstream.ups_status_timer_interval = config.global.ups_status_timer_interval or 5
+    upstream.ups_status_timer_interval = config.global.ups_status_timer_interval
+        or 5
 
     for skey, ups in pairs(config) do
         if type(ups) == "table" and ups.cluster
