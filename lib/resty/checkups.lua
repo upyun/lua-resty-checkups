@@ -417,6 +417,10 @@ local function cluster_heartbeat(skey)
     local ups_typ = ups.typ or "general"
     local ups_heartbeat = ups.heartbeat
     local ups_sensi = ups.sensibility or 1
+    local ups_protected = true
+    if ups.protected == false then
+        ups_protected = false
+    end
 
     ups.timeout = ups.timeout or 60
 
@@ -441,7 +445,7 @@ local function cluster_heartbeat(skey)
                 no_available = false
             end
 
-            if pos == last and no_available then
+            if ups_protected and pos == last and no_available then
                 update_peer_status(key, _M.STATUS_UNSTABLE, err or cjson.null,
                                    ups_sensi)
             else
