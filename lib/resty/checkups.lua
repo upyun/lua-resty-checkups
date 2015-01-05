@@ -337,6 +337,11 @@ local heartbeat = {
             return statuses
         end
 
+        local replication_field = {
+            role = true, master_link_status = true,
+            master_link_down_since_seconds = true
+        }
+
         while true do
             local m, err = iter()
             if err then
@@ -348,7 +353,9 @@ local heartbeat = {
                 break
             end
 
-            replication[m[1]] = m[2]
+            if replication_field[lower(m[1])] then
+                replication[m[1]] = m[2]
+            end
         end
 
         return statuses
