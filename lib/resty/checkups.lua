@@ -14,6 +14,7 @@ local WARN = ngx.WARN
 local tcp = ngx.socket.tcp
 local re_find = ngx.re.find
 local re_match = ngx.re.match
+local re_gmatch = ngx.re.gmatch
 local mutex = ngx.shared.mutex
 local state = ngx.shared.state
 local localtime = ngx.localtime
@@ -91,7 +92,9 @@ local function update_peer_status(peer_key, status, msg, sensibility)
         end
     end
 
-    old_status.msg = msg
+    for k, v in pairs(msg) do
+        old_status[k] = v
+    end
 
     local ok, err = state:set(status_key, cjson.encode(old_status))
     if not ok then
@@ -314,9 +317,48 @@ local heartbeat = {
             return _M.STATUS_ERR, err
         end
 
+        local replication = {}
+        local statuses = {
+            status = _M.STATUS_OK ,
+            replication = replication
+        }
+
+        local res, err = red:info("replication")
+        if not res then
+            replication.err = err
+            return statuses
+        end
+
         red:set_keepalive(10000, 100)
 
-        return _M.STATUS_OK
+        local iter, err = re_gmatch(res, [[([a-zA-Z_]+):(.+?)\r\n]], "i")
+        if not iter then
+            replication.err = err
+            return statuses
+        end
+
+        local replication_field = {
+            role = true, master_link_status = true,
+            master_link_down_since_seconds = true
+        }
+
+        while true do
+            local m, err = iter()
+            if err then
+                replication.err = err
+                return statuses
+            end
+
+            if not m then
+                break
+            end
+
+            if replication_field[lower(m[1])] then
+                replication[m[1]] = m[2]
+            end
+        end
+
+        return statuses
     end,
 
     mysql = function (host, port, ups)
@@ -439,17 +481,27 @@ local function cluster_heartbeat(skey)
             local key = srv.host .. ":" .. tostring(srv.port)
             local cb_heartbeat = ups_heartbeat or heartbeat[ups_typ] or
                 heartbeat["general"]
-            local status, err = cb_heartbeat(srv.host, srv.port, ups)
+            local statuses, err = cb_heartbeat(srv.host, srv.port, ups)
+
+            local status
+            if type(statuses) == "table" then
+                status = statuses.status
+                statuses.status = nil
+            else
+                status = statuses
+                statuses = {}
+            end
+
+            statuses.msg = err or cjson.null
 
             if status == _M.STATUS_OK then
                 no_available = false
             end
 
             if ups_protected and pos == last and no_available then
-                update_peer_status(key, _M.STATUS_UNSTABLE, err or cjson.null,
-                                   ups_sensi)
+                update_peer_status(key, _M.STATUS_UNSTABLE, statuses, ups_sensi)
             else
-                update_peer_status(key, status, err or cjson.null, ups_sensi)
+                update_peer_status(key, status, statuses, ups_sensi)
             end
         end
     end
