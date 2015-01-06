@@ -56,26 +56,24 @@ __DATA__
             ngx.say(st["cls:redis"][1][1].status)
             ngx.say(st["cls:redis"][1][1].msg)
             ngx.say(st["cls:redis"][1][1].replication.role)
-            ngx.say(st["cls:redis"][1][1].replication.connected_slaves)
 
             ngx.sleep(2)
             local st = checkups.get_status()
             ngx.say(st["cls:redis"][1][1].status)
             ngx.say(st["cls:redis"][1][1].msg)
             ngx.say(st["cls:redis"][1][1].replication.role)
-            ngx.say(st["cls:redis"][1][1].replication.connected_slaves)
         ';
     }
 --- request
 GET /t
---- response_body
+--- response_body_like
 127.0.0.1:6379 OK
 ok
 null
-master
+master|slave
 0
 ok
 null
-master
+master|slave
 0
 --- timeout: 10
