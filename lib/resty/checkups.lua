@@ -1,23 +1,25 @@
 -- Copyright (C) 2014 Jing Ye (yejingx), UPYUN Inc.
 -- Copyright (C) 2014 Monkey Zhang (timebug), UPYUN Inc.
 
-local lock = require "resty.lock"
+local lock  = require "resty.lock"
 local cjson = require "cjson.safe"
 
-local floor = math.floor
-local str_sub = string.sub
-local lower = string.lower
-local byte = string.byte
+local str_sub    = string.sub
+local lower      = string.lower
+local byte       = string.byte
+local floor      = math.floor
 local tab_insert = table.insert
-local ERR = ngx.ERR
+
+local ERR  = ngx.ERR
 local WARN = ngx.WARN
-local tcp = ngx.socket.tcp
-local re_find = ngx.re.find
-local re_match = ngx.re.match
-local re_gmatch = ngx.re.gmatch
-local mutex = ngx.shared.mutex
-local state = ngx.shared.state
+
+local tcp       = ngx.socket.tcp
 local localtime = ngx.localtime
+local re_find   = ngx.re.find
+local re_match  = ngx.re.match
+local re_gmatch = ngx.re.gmatch
+local mutex     = ngx.shared.mutex
+local state     = ngx.shared.state
 
 local _M = { _VERSION = "0.07",
              STATUS_OK = 0, STATUS_ERR = 1, STATUS_UNSTABLE = 2 }
@@ -123,6 +125,83 @@ local function check_res(ups, res)
 end
 
 
+local function _gcd(a, b)
+    while b ~= 0 do
+        a, b = b, a % b
+    end
+
+    return a
+end
+
+
+local function calc_gcd_weight(servers)
+    -- calculate the GCD and maximum weight value from a set of servers
+    local gcd, max_weight = 0, 0
+
+    for _, srv in ipairs(servers) do
+        if not srv.weight or type(srv.weight) ~= "number" or srv.weight < 1 then
+            srv.weight = 1
+        end
+
+        if srv.weight > max_weight then
+            max_weight = srv.weight
+        end
+
+        gcd = _gcd(srv.weight, gcd)
+    end
+
+    return gcd, max_weight
+end
+
+
+local function select_round_robin_server(cls, verify_server_status)
+    local servers = cls.servers
+    local srvs_len = #servers
+
+    if srvs_len < 1 then
+        return nil, "no servers"
+    end
+
+    local rr = cls.rr
+    local idx, cw = rr.idx, rr.cw
+    local gcd, max_weight = rr.gcd, rr.max_weight
+    local failed_count = 1
+    local failed_flag = false
+
+    repeat
+        idx = idx % srvs_len + 1
+        if idx == 1 then
+            cw = cw - gcd
+            if cw <= 0 then
+                cw = max_weight
+                if cw == 0 then
+                    return nil, "all servers have 0 weight"
+                end
+            end
+        end
+
+        local srv = servers[idx]
+        if srv.weight >= cw or failed_flag then
+            if type(verify_server_status) == "function" then
+                if verify_server_status(srv) then
+                    rr.idx, rr.cw = idx, cw
+                    failed_flag = false
+                    return srv
+                else
+                    failed_flag = true
+                    failed_count = failed_count + 1
+                end
+            else
+                rr.idx, rr.cw = idx, cw
+                return srv
+            end
+        end
+    until failed_count > srvs_len
+
+    return nil, "no servers available"
+end
+
+
 local function try_server(ups, srv, callback, try)
     try = try or 1
     local key = srv.host .. ":" .. tostring(srv.port)
@@ -188,47 +267,60 @@ local function try_cluster_consistent_hash(ups, cls, callback, hash_key)
 end
 
 
-local function try_cluster_round_robin(ups, cls, callback)
-    local counter = cls.counter
+local function try_cluster_round_robin(ups, cls, callback, try_again)
+    local srvs_len = #cls.servers
 
-    local idx = counter() -- pre request load-balancing with round-robin
-    local try = cls.try or #cls.servers
-    local len_servers = #cls.servers
+    local try
+    if try_again then
+        try = try_again
+    else
+        try = cls.try or srvs_len
+    end
 
-    for i=1, len_servers, 1 do
-        local srv = cls.servers[idx]
+    local verify_server_status = function(srv)
         local key = srv.host .. ":" .. tostring(srv.port)
-        local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX
-                                                       .. key))
+        local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX .. key))
         if peer_status == nil or peer_status.status ~= _M.STATUS_ERR then
-            local res, err = callback(srv.host, srv.port)
+            return true
+        end
+        return
+    end
 
+    for i = 1, srvs_len, 1 do
+        local srv, err = select_round_robin_server(cls, verify_server_status)
+        local res
+        if not srv then
+            if try < 1 then
+                try = nil
+            end
+            return nil, err, try
+        else
+            res, err = callback(srv.host, srv.port)
             if check_res(ups, res) then
                 return res
             end
 
             try = try - 1
             if try < 1 then -- max try times
-                return res, err
+                return nil, err
             end
         end
-        idx = idx % len_servers + 1
     end
 
     -- continue to next level
     if try > 0 then
-        return nil, nil, true
+        return nil, nil, try
     end
 end
 
 
-local function try_cluster(ups, cls, callback, opts)
+local function try_cluster(ups, cls, callback, opts, try_again)
     local mode = ups.mode
     if mode == "hash" then
         local hash_key = opts.hash_key or ngx.var.uri
         return try_cluster_consistent_hash(ups, cls, callback, hash_key)
     else
-        return try_cluster_round_robin(ups, cls, callback)
+        return try_cluster_round_robin(ups, cls, callback, try_again)
     end
 end
 
@@ -240,7 +332,7 @@ function _M.ready_ok(skey, callback, opts)
         return nil, "unknown skey " .. skey
     end
 
-    local res, err, cont
+    local res, err, cont, try_again
 
     -- try by key
     if opts.cluster_key then
@@ -248,10 +340,15 @@ function _M.ready_ok(skey, callback, opts)
             opts.cluster_key.backup}) do
             local cls = ups.cluster[cls_key]
             if cls then
-                res, err = try_cluster(ups, cls, callback, opts)
+                res, err, cont = try_cluster(ups, cls, callback, opts, try_again)
                 if res then
                     return res, err
                 end
+
+                -- continue to next key?
+                if not cont then break end
+
+                try_again = cont
             end
         end
         return nil, err or "no upstream available"
@@ -259,22 +356,17 @@ function _M.ready_ok(skey, callback, opts)
 
     -- try by level
     for level, cls in ipairs(ups.cluster) do
-        res, err, cont = try_cluster(ups, cls, callback, opts)
+        res, err, cont = try_cluster(ups, cls, callback, opts, try_again)
         if res then
             return res, err
         end
 
         -- continue to next level?
-        if not cont then
-            break
-        end
-    end
+        if not cont then break end
 
-    if not err then
-        err = "no upstream available"
+        try_again = cont
     end
-
-    return nil, err
+    return nil, err or "no upstream available"
 end
 
 
@@ -548,8 +640,8 @@ local function active_checkup(premature)
 end
 
 
-local function ups_status_checker(permature)
-    if permature then
+local function ups_status_checker(premature)
+    if premature then
         return
     end
 
@@ -668,22 +760,12 @@ local function extract_servers_from_upstream(cls)
         local host, port = m[1], m[2] or 80
         peer_id_dict[host .. ':' .. port] = { id = srv.id,
             backup = ups_backup and true or false}
-        tab_insert(cls.servers, { host=host, port=port })
+        tab_insert(cls.servers, { host=host, port=port, weight=srv.weight })
     end
 end
 
 
 function _M.prepare_checker(config)
-    local function counter(max)
-        local i = 0
-        return function ()
-            if max > 0 then
-                i = i % max + 1
-            end
-            return i
-        end
-    end
-
     upstream.start_time = localtime()
     upstream.conf_hash = config.global.conf_hash
     upstream.checkup_timer_interval = config.global.checkup_timer_interval or 5
@@ -694,12 +776,12 @@ function _M.prepare_checker(config)
         or 5
 
     for skey, ups in pairs(config) do
-        if type(ups) == "table" and ups.cluster
-            and type(ups.cluster) == "table" then
+        if type(ups) == "table" and type(ups.cluster) == "table" then
             upstream.checkups[skey] = table_dup(ups)
             for level, cls in pairs(upstream.checkups[skey].cluster) do
                 extract_servers_from_upstream(cls)
-                cls.counter = counter(#cls.servers)
+                cls.rr = { idx = 0, cw = 0 }
+                cls.rr.gcd, cls.rr.max_weight = calc_gcd_weight(cls.servers)
             end
         end
     end
