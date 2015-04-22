@@ -151,7 +151,7 @@ local function _extract_srv_host_port(name)
 end
 
 
-local function calc_gcd_weight(servers)
+function _M.calc_gcd_weight(servers)
     -- calculate the GCD and maximum weight value from a set of servers
     local gcd, max_weight = 0, 0
 
@@ -171,14 +171,14 @@ local function calc_gcd_weight(servers)
 end
 
 
-local function select_round_robin_server(cls, verify_server_status)
+function _M.select_round_robin_server(cls, verify_server_status)
     local servers = cls.servers
-    local srvs_len = #servers
 
-    if srvs_len < 1 then
+    if type(servers) ~= "table" or not next(servers) then
         return nil, "no servers"
     end
 
+    local srvs_len = #servers
     local rr = cls.rr
     local idx, cw = rr.idx, rr.cw
     local gcd, max_weight = rr.gcd, rr.max_weight
@@ -199,18 +199,17 @@ local function select_round_robin_server(cls, verify_server_status)
 
         local srv = servers[idx]
         if srv.weight >= cw or failed_flag then
-            if type(verify_server_status) == "function" then
+            local state = { idx = idx, cw = cw }
+            if verify_server_status then
                 if verify_server_status(srv) then
-                    rr.idx, rr.cw = idx, cw
                     failed_flag = false
-                    return srv
+                    return srv, state
                 else
                     failed_flag = true
                     failed_count = failed_count + 1
                 end
             else
-                rr.idx, rr.cw = idx, cw
-                return srv
+                return srv, state
             end
         end
     until failed_count > srvs_len
@@ -303,16 +302,14 @@ local function try_cluster_round_robin(skey, ups, cls, callback, try_again)
         return
     end
 
+    local rr = cls.rr
     for i = 1, srvs_len, 1 do
-        local srv, err = select_round_robin_server(cls, verify_server_status)
-        local res
+        local srv, state = _M.select_round_robin_server(cls, verify_server_status)
         if not srv then
-            if try < 1 then
-                try = nil
-            end
-            return nil, err, try
+            return nil, state, try
         else
-            res, err = callback(srv.host, srv.port)
+            rr.idx, rr.cw = state.idx, state.cw
+            local res, err = callback(srv.host, srv.port)
             if check_res(ups, res) then
                 return res
             end
@@ -328,6 +325,48 @@ local function try_cluster_round_robin(skey, ups, cls, callback, try_again)
     if try > 0 then
         return nil, nil, try
     end
+end
+
+
+function _M.try_cluster_round_robin(clusters, update_rr_state, verify_server_status, callback, opts)
+    local try, cluster_key = opts.try, opts.cluster_key
+    local break_flag = false
+
+    local res, err
+    for _, ckey in ipairs(cluster_key) do
+        (function()
+            local cls = clusters[ckey]
+            if not (type(cls) == "table" and type(cls.servers) == "table" and next(cls.servers)) then
+                return
+            end
+
+            for i = 1, #cls.servers, 1 do
+                if update_rr_state then
+                    update_rr_state(ckey, cls)
+                end
+
+                local srv, state = _M.select_round_robin_server(cls, verify_server_status)
+                if srv then
+                    local res, err = callback(srv, ckey, state)
+                    if res then
+                        return res
+                    end
+
+                    try = try - 1
+                    if try < 1 then
+                        break_flag = true
+                        break
+                    end
+                end
+            end
+        end)()
+
+        if break_flag then
+            break
+        end
+    end
+
+    return nil, err or "no servers available"
 end
 
 
@@ -363,7 +402,7 @@ function _M.ready_ok(skey, callback, opts)
                 end
 
                 -- continue to next key?
-                if not cont then break end
+                if not cont or cont < 1 then break end
 
                 try_again = cont
             end
@@ -795,7 +834,7 @@ function _M.prepare_checker(config)
             for level, cls in pairs(upstream.checkups[skey].cluster) do
                 extract_servers_from_upstream(skey, cls)
                 cls.rr = { idx = 0, cw = 0 }
-                cls.rr.gcd, cls.rr.max_weight = calc_gcd_weight(cls.servers)
+                cls.rr.gcd, cls.rr.max_weight = _M.calc_gcd_weight(cls.servers)
             end
         end
     end

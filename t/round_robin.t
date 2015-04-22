@@ -17,6 +17,8 @@ our $HttpConfig = qq{
     lua_shared_dict state 10m;
     lua_shared_dict mutex 1m;
     lua_shared_dict locks 1m;
+    lua_shared_dict ip_black_lists 10m;
+    lua_shared_dict round_robin_state 10m;
 
     server {
         listen 12350;
@@ -243,3 +245,124 @@ EEFHHHno upstream available
 GET /t
 --- response_body
 FFFHHHno upstream available
+
+=== TEST 7: Round robin interface
+--- http_config eval
+"$::HttpConfig" . "$::InitConfig"
+--- config
+    location = /t {
+        content_by_lua '
+            local cjson    = require "cjson.safe"
+            local checkups = require "resty.checkups"
+            checkups.create_checker()
+            ngx.sleep(2)
+
+            local str_format = string.format
+
+            local rr_state = ngx.shared.round_robin_state
+            local ip_black_lists = ngx.shared.ip_black_lists
+
+            local dict = { [12350] = "0",
+                [12351] = "A",
+                [12352] = "B",
+                [12353] = "C",
+                [12354] = "D",
+                [12355] = "E",
+                [12356] = "F",
+                [12357] = "G",
+            }
+
+            local metadata = {
+                ctn = {
+                    servers = {
+                       { host = "127.0.0.1", port = 12350, weight = 1 },
+                       { host = "127.0.0.1", port = 12351, weight = 2 },
+                    },
+                },
+                cun = {
+                    servers = {
+                       { host = "127.0.0.1", port = 12354, weight = 3 },
+                       { host = "127.0.0.1", port = 12355, weight = 2 },
+                    },
+                },
+                cmn = {
+                    servers = {
+                       { host = "127.0.0.1", port = 12354, weight = 5 },
+                       { host = "127.0.0.1", port = 12356, weight = 3 },
+                    },
+                },
+            }
+
+            local verify_server_status = function(srv)
+                if ip_black_lists:get(str_format("%s:%s:%d", "bucket", srv.host, srv.port)) then
+                    return false
+                end
+
+                return true
+            end
+
+            local callback = function(srv, ckey, state)
+                rr_state:set("bucket:" .. ckey, cjson.encode(state), 5 * 60)
+
+                local res
+                if srv.port == 12354 or srv.port == 12357 then
+                    res = { status = 502 }
+                else
+                    ngx.print(dict[srv.port])
+                end
+
+                if res and res.status == 502 then
+                    ip_black_lists:set(str_format("%s:%s:%d", "bucket", srv.host, srv.port), 1, 10)
+                    return nil, "bad status"
+                end
+            end
+
+            local update_rr_state = function(ckey, cls)
+                local gcd, max_weight = checkups.calc_gcd_weight(cls.servers)
+                local state = rr_state:get("bucket:" .. ckey)
+                if state then
+                    local rr, err = cjson.decode(state)
+                    if rr then
+                        rr.gcd, rr.max_weight = gcd, max_weight
+                        cls.rr = rr
+                    end
+                end
+
+                if not cls.rr then
+                    cls.rr = { gcd = gcd, max_weight = max_weight, idx = 0, cw = 0 }
+                end
+            end
+
+            local opts = { try = 20, cluster_key = {"ctn", "cun", "cmn"} }
+            for i = 1, 5, 1 do
+                local ok, err = checkups.try_cluster_round_robin(metadata,
+                    update_rr_state, verify_server_status, callback, opts)
+                if err then
+                    ngx.say(err)
+                end
+            end
+            ngx.sleep(10)
+
+            for i = 1, 5, 1 do
+                local ok, err = checkups.try_cluster_round_robin(metadata,
+                    update_rr_state, verify_server_status, callback, opts)
+                if err then
+                    ngx.say(err)
+                end
+            end
+        ';
+    }
+--- request
+GET /t
+--- response_body
+A0EFFno servers available
+AAEEFFno servers available
+0AEEFFno servers available
+A0EEFFno servers available
+AAEEFFno servers available
+0AEFFno servers available
+A0EEFFno servers available
+AAEEFFno servers available
+0AEEFFno servers available
+A0EEFFno servers available
+--- timeout: 20
