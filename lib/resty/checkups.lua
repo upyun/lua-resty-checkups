@@ -5,6 +5,7 @@ local lock  = require "resty.lock"
 local cjson = require "cjson.safe"
 
 local str_sub    = string.sub
+local str_format = string.format
 local lower      = string.lower
 local byte       = string.byte
 local floor      = math.floor
@@ -114,7 +115,7 @@ local function check_res(ups, res)
             local status = tonumber(res.status)
             local opts = ups.http_opts
             if opts and opts.statuses and
-            opts.statuses[status] == false then
+                opts.statuses[status] == false then
                 return false
             end
         end
@@ -131,6 +132,22 @@ local function _gcd(a, b)
     end
 
     return a
+end
+
+
+local function _gen_key(skey, srv)
+    return str_format("%s:%s:%d", skey, srv.host, srv.port)
+end
+
+
+local function _extract_srv_host_port(name)
+    local m = re_match(name, [[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)(?::([0-9]+))?]])
+    if not m then
+        return
+    end
+
+    local host, port = m[1], m[2] or 80
+    return host, port
 end
 
 
@@ -202,10 +219,10 @@ local function select_round_robin_server(cls, verify_server_status)
 end
 
 
-local function try_server(ups, srv, callback, try)
+local function try_server(skey, ups, srv, callback, try)
     try = try or 1
-    local key = srv.host .. ":" .. tostring(srv.port)
-    local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX .. key))
+    local peer_key = _gen_key(skey, srv)
+    local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX .. peer_key))
     local res, err
 
     if peer_status == nil or peer_status.status ~= _M.STATUS_ERR then
@@ -236,7 +253,7 @@ local function hash_value(data)
 end
 
 
-local function try_cluster_consistent_hash(ups, cls, callback, hash_key)
+local function try_cluster_consistent_hash(skey, ups, cls, callback, hash_key)
     local server_len = #cls.servers
     if server_len == 0 then
         return nil, "no server available", true
@@ -246,7 +263,7 @@ local function try_cluster_consistent_hash(ups, cls, callback, hash_key)
     local p = floor((hash % 1024) / floor(1024 / server_len)) % server_len + 1
 
     -- try hashed node
-    local res, err = try_server(ups, cls.servers[p], callback)
+    local res, err = try_server(skey, ups, cls.servers[p], callback)
     if res then
         return res
     end
@@ -256,7 +273,7 @@ local function try_cluster_consistent_hash(ups, cls, callback, hash_key)
     local q = (p + hash % hash_backup_node + 1) % server_len + 1
     if p ~= q then
         local try = cls.try or #cls.servers
-        res, err = try_server(ups, cls.servers[q], callback, try - 1)
+        res, err = try_server(skey, ups, cls.servers[q], callback, try - 1)
         if res then
             return res
         end
@@ -267,7 +284,7 @@ local function try_cluster_consistent_hash(ups, cls, callback, hash_key)
 end
 
 
-local function try_cluster_round_robin(ups, cls, callback, try_again)
+local function try_cluster_round_robin(skey, ups, cls, callback, try_again)
     local srvs_len = #cls.servers
 
     local try
@@ -278,8 +295,8 @@ local function try_cluster_round_robin(ups, cls, callback, try_again)
     end
 
     local verify_server_status = function(srv)
-        local key = srv.host .. ":" .. tostring(srv.port)
-        local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX .. key))
+        local peer_key = _gen_key(skey, srv)
+        local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX .. peer_key))
         if peer_status == nil or peer_status.status ~= _M.STATUS_ERR then
             return true
         end
@@ -314,13 +331,13 @@ local function try_cluster_round_robin(ups, cls, callback, try_again)
 end
 
 
-local function try_cluster(ups, cls, callback, opts, try_again)
+local function try_cluster(skey, ups, cls, callback, opts, try_again)
     local mode = ups.mode
     if mode == "hash" then
         local hash_key = opts.hash_key or ngx.var.uri
-        return try_cluster_consistent_hash(ups, cls, callback, hash_key)
+        return try_cluster_consistent_hash(skey, ups, cls, callback, hash_key)
     else
-        return try_cluster_round_robin(ups, cls, callback, try_again)
+        return try_cluster_round_robin(skey, ups, cls, callback, try_again)
     end
 end
 
@@ -340,7 +357,7 @@ function _M.ready_ok(skey, callback, opts)
             opts.cluster_key.backup}) do
             local cls = ups.cluster[cls_key]
             if cls then
-                res, err, cont = try_cluster(ups, cls, callback, opts, try_again)
+                res, err, cont = try_cluster(skey, ups, cls, callback, opts, try_again)
                 if res then
                     return res, err
                 end
@@ -356,7 +373,7 @@ function _M.ready_ok(skey, callback, opts)
 
     -- try by level
     for level, cls in ipairs(ups.cluster) do
-        res, err, cont = try_cluster(ups, cls, callback, opts, try_again)
+        res, err, cont = try_cluster(skey, ups, cls, callback, opts, try_again)
         if res then
             return res, err
         end
@@ -570,7 +587,7 @@ local function cluster_heartbeat(skey)
     for level, cls in pairs(ups.cluster) do
         for id, srv in ipairs(cls.servers) do
             pos = pos + 1
-            local key = srv.host .. ":" .. tostring(srv.port)
+            local peer_key = _gen_key(skey, srv)
             local cb_heartbeat = ups_heartbeat or heartbeat[ups_typ] or
                 heartbeat["general"]
             local statuses, err = cb_heartbeat(srv.host, srv.port, ups)
@@ -591,9 +608,9 @@ local function cluster_heartbeat(skey)
             end
 
             if ups_protected and pos == last and no_available then
-                update_peer_status(key, _M.STATUS_UNSTABLE, statuses, ups_sensi)
+                update_peer_status(peer_key, _M.STATUS_UNSTABLE, statuses, ups_sensi)
             else
-                update_peer_status(key, status, statuses, ups_sensi)
+                update_peer_status(peer_key, status, statuses, ups_sensi)
             end
         end
     end
@@ -673,16 +690,16 @@ local function ups_status_checker(premature)
             end
 
             for _, srv in pairs(cls.servers) do
-                local peer_key = srv.host .. ':' .. srv.port
+                local peer_key = _gen_key(skey, srv)
                 local status_key = PEER_STATUS_PREFIX .. peer_key
 
                 local peer_status, err = state:get(status_key)
                 if peer_status then
                     local st = cjson.decode(peer_status)
-                    local up_st = ups_status[peer_key]
+                    local up_st = ups_status[srv.host .. ':' .. srv.port]
                     local unstable = st.status == _M.STATUS_UNSTABLE
                     if (unstable and up_st == _M.STATUS_ERR) or
-                    (not unstable and up_st and st.status ~= up_st) then
+                        (not unstable and up_st and st.status ~= up_st) then
                         local up_id = peer_id_dict[peer_key]
                         local down = up_st == _M.STATUS_OK and true or false
                         local ok, err = up.set_peer_down(
@@ -693,7 +710,7 @@ local function ups_status_checker(premature)
                     end
                 elseif err then
                     ngx.log(WARN, "get peer status error " .. status_key .. ' '
-                                .. err)
+                            .. err)
                 end
             end
         end
@@ -724,7 +741,7 @@ local function table_dup(ori_tab)
 end
 
 
-local function extract_servers_from_upstream(cls)
+local function extract_servers_from_upstream(skey, cls)
     local up_key = cls.upstream
     if not up_key then
         return
@@ -750,16 +767,13 @@ local function extract_servers_from_upstream(cls)
     end
 
     for _, srv in ipairs(srvs) do
-        local m = re_match(srv.name,
-            "([0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+)(?::([0-9]+))?")
-        if not m then
+        local host, port = _extract_srv_host_port(srv.name)
+        if not host then
             ngx.log(ngx.ERR, "invalid server name ", srv.name)
             return
         end
-
-        local host, port = m[1], m[2] or 80
-        peer_id_dict[host .. ':' .. port] = { id = srv.id,
-            backup = ups_backup and true or false}
+        peer_id_dict[_gen_key(skey, { host = host, port = port })] = {
+            id = srv.id, backup = ups_backup and true or false}
         tab_insert(cls.servers, { host=host, port=port, weight=srv.weight })
     end
 end
@@ -779,7 +793,7 @@ function _M.prepare_checker(config)
         if type(ups) == "table" and type(ups.cluster) == "table" then
             upstream.checkups[skey] = table_dup(ups)
             for level, cls in pairs(upstream.checkups[skey].cluster) do
-                extract_servers_from_upstream(cls)
+                extract_servers_from_upstream(skey, cls)
                 cls.rr = { idx = 0, cw = 0 }
                 cls.rr.gcd, cls.rr.max_weight = calc_gcd_weight(cls.servers)
             end
@@ -803,12 +817,12 @@ local function get_upstream_status(skey)
         ups_status[level] = {}
         if servers and type(servers) == "table" and #servers > 0 then
             for id, srv in ipairs(servers) do
-                local key = srv.host .. ":" .. tostring(srv.port)
+                local peer_key = _gen_key(skey, srv)
                 local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX ..
-                                                               key)) or {}
-                peer_status.server = key
+                                                           peer_key)) or {}
+                peer_status.server = peer_key
                 if not peer_status.status or
-                peer_status.status == _M.STATUS_OK then
+                    peer_status.status == _M.STATUS_OK then
                     peer_status.status = "ok"
                 elseif peer_status.status == _M.STATUS_ERR then
                     peer_status.status = "err"
