@@ -35,7 +35,7 @@ _M.multi_level = {
 
     cluster = {
         {   -- level 1
-            try = 4,
+            try = 8,
             servers = {
                 { host = "127.0.0.1", port = 12354, weight = 2 }, -- fake
                 { host = "127.0.0.1", port = 12355, weight = 3 },

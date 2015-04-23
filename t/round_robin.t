@@ -61,6 +61,7 @@ our $InitConfig = qq{
 $ENV{TEST_NGINX_RESOLVER} = '8.8.8.8';
 $ENV{TEST_NGINX_CHECK_LEAK} = 1;
 $ENV{TEST_NGINX_USE_HUP} = 1;
+$ENV{TEST_NGINX_PWD} = $pwd;
 
 #no_diff();
 no_long_string();
@@ -145,16 +146,17 @@ GET /t
                 return
             end
 
-            local ok, err = checkups.ready_ok("multi_level", cb_ok)
-            if err then
-                ngx.say(err)
+            for i = 1, 5, 1 do
+                local ok, err = checkups.ready_ok("multi_key", cb_ok, {cluster_key = {default = "c1", backup = "c2"}})
+                if i ~= 5 then
+                    ngx.print(" ")
+                end
             end
         ';
     }
 --- request
 GET /t
---- response_body
-EEFHno upstream available
+--- response_body: EEEHHH FEFHHH EEFHHH EFEHHH EFEHHH
 
 === TEST 4: Round robin is consistent, try by key
 --- http_config eval
@@ -206,16 +208,17 @@ GET /t
                 return
             end
 
-            local ok, err = checkups.ready_ok("multi_key", cb_ok, {cluster_key = {default = "c1", backup = "c2"}})
-            if err then
-                ngx.say(err)
+            for i = 1, 5, 1 do
+                local ok, err = checkups.ready_ok("multi_key", cb_ok, {cluster_key = {default = "c1", backup = "c2"}})
+                if i ~= 5 then
+                    ngx.print(" ")
+                end
             end
         ';
     }
 --- request
 GET /t
---- response_body
-EEFHHHno upstream available
+--- response_body: EEEHHH FEFHHH EEFHHH EFEHHH EFEHHH
 
 === TEST 6: Round robin with multiple fake hosts and large weight, try by key
 --- http_config eval
@@ -245,140 +248,41 @@ EEFHHHno upstream available
 GET /t
 --- response_body
 FFFHHHno upstream available
+--- timeout: 10
 
 === TEST 7: Round robin interface
 --- http_config eval
 "$::HttpConfig" . "$::InitConfig"
 --- config
     location = /t {
-        content_by_lua '
-            local cjson    = require "cjson.safe"
-            local checkups = require "resty.checkups"
-            checkups.create_checker()
-            ngx.sleep(2)
-
-            local str_format = string.format
-
-            local rr_state = ngx.shared.round_robin_state
-            local ip_black_lists = ngx.shared.ip_black_lists
-
-            local dict = { [12350] = "0",
-                [12351] = "A",
-                [12352] = "B",
-                [12353] = "C",
-                [12354] = "D",
-                [12355] = "E",
-                [12356] = "F",
-                [12357] = "G",
-            }
-
-            local metadata = {
-                ctn = {
-                    servers = {
-                       { host = "127.0.0.1", port = 12350, weight = 1 },
-                       { host = "127.0.0.1", port = 12351, weight = 2 },
-                    },
-                },
-                cun = {
-                    servers = {
-                       { host = "127.0.0.1", port = 12354, weight = 3 },
-                       { host = "127.0.0.1", port = 12355, weight = 2 },
-                    },
-                },
-                cmn = {
-                    servers = {
-                       { host = "127.0.0.1", port = 12354, weight = 5 },
-                       { host = "127.0.0.1", port = 12356, weight = 3 },
-                    },
-                },
-            }
-
-            local verify_server_status = function(srv)
-                if ip_black_lists:get(str_format("%s:%s:%d", "bucket", srv.host, srv.port)) then
-                    return false
-                end
-
-                return true
-            end
-
-            local callback = function(srv, ckey, state)
-                rr_state:set("bucket:" .. ckey, cjson.encode(state), 5 * 60)
-
-                local res
-                if srv.port == 12354 or srv.port == 12357 then
-                    res = { status = 502 }
-                else
-                    ngx.print(dict[srv.port])
-                end
-
-                if res and res.status == 502 then
-                    ip_black_lists:set(str_format("%s:%s:%d", "bucket", srv.host, srv.port), 1, 10)
-                    return nil, "bad status"
-                end
-
-                return res, " port: " .. srv.port
-            end
-
-            local update_rr_state = function(ckey, cls)
-                local gcd, max_weight = checkups.calc_gcd_weight(cls.servers)
-                local state = rr_state:get("bucket:" .. ckey)
-                if state then
-                    local rr, err = cjson.decode(state)
-                    if rr then
-                        rr.gcd, rr.max_weight = gcd, max_weight
-                        cls.rr = rr
-                    end
-                end
-
-                if not cls.rr then
-                    cls.rr = { gcd = gcd, max_weight = max_weight, idx = 0, cw = 0 }
-                end
-            end
-
-            local opts = { try = 20, cluster_key = {"ctn", "cun", "cmn"} }
-            for i = 1, 5, 1 do
-                local res, err = checkups.try_cluster_round_robin(metadata,
-                    update_rr_state, verify_server_status, callback, opts)
-                if err then
-                    ngx.say(err)
-                end
-            end
-            ngx.sleep(10)
-
-            for i = 1, 5, 1 do
-                local res, err = checkups.try_cluster_round_robin(metadata,
-                    update_rr_state, verify_server_status, callback, opts)
-                if err then
-                    ngx.say(err)
-                end
-            end
-
-            opts.try = 2
-            for i = 1, 5, 1 do
-                local res, err = checkups.try_cluster_round_robin(metadata,
-                    update_rr_state, verify_server_status, callback, opts)
-                if err then
-                    ngx.say(err)
-                end
-            end
-        ';
+        content_by_lua_file $TEST_NGINX_PWD/t/lib/round_robin_interface.lua;
     }
 --- request
 GET /t
 --- response_body
-A0EFF port: 12356
-AAEEFF port: 12356
-0AEEFF port: 12356
-A0EEFF port: 12356
-AAEEFF port: 12356
-0AEFF port: 12356
-A0EEFF port: 12356
-AAEEFF port: 12356
-0AEEFF port: 12356
-A0EEFF port: 12356
-AA port: 12351
+G00DEFAF port: 12356
+0A0EEAFF port: 12356
+A00EEAFA port: 12351
+0A0EEFFA port: 12351
+A00EEFAF port: 12356
+
+0A0DEFAF port: 12356
+AG0EEAFF port: 12356
+00AEEAFA port: 12351
+0A0EEFFA port: 12351
+00AEEFAF port: 12356
+
 0A port: 12351
-A0 port: 12350
-AA port: 12351
+00 port: 12350
 0A port: 12351
---- timeout: 20
+0A port: 12351
+00 port: 12350
+
+0
+A
+0
+A
+0
+0
+
+--- timeout: 30

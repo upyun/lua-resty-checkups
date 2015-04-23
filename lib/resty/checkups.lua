@@ -153,21 +153,33 @@ end
 
 function _M.calc_gcd_weight(servers)
     -- calculate the GCD and maximum weight value from a set of servers
-    local gcd, max_weight = 0, 0
+    local gcd, max_weight, weight_sum = 0, 0, 0
 
     for _, srv in ipairs(servers) do
         if not srv.weight or type(srv.weight) ~= "number" or srv.weight < 1 then
             srv.weight = 1
         end
 
-        if srv.weight > max_weight then
-            max_weight = srv.weight
+        if not srv.effective_weight then
+            srv.effective_weight = srv.weight
         end
 
-        gcd = _gcd(srv.weight, gcd)
+        if srv.effective_weight > max_weight then
+            max_weight = srv.effective_weight
+        end
+
+        weight_sum = weight_sum + srv.effective_weight
+        gcd = _gcd(srv.effective_weight, gcd)
     end
 
-    return gcd, max_weight
+    return gcd, max_weight, weight_sum
+end
+
+
+function _M.reset_round_robin_state(cls)
+    local rr = { index = 0, current_weight = 0 }
+    rr.gcd, rr.max_weight, rr.weight_sum = _M.calc_gcd_weight(cls.servers)
+    cls.rr = rr
 end
 
 
@@ -185,40 +197,44 @@ function _M.select_round_robin_server(cls, verify_server_status)
 
     local srvs_len = #servers
     local rr = cls.rr
-    -- weighted round robin state, idx -> index, cw -> current_weight
-    local idx, cw = rr.idx, rr.cw
-    local gcd, max_weight = rr.gcd, rr.max_weight
+    local index, current_weight = rr.index, rr.current_weight
+    local gcd, max_weight, weight_sum = rr.gcd, rr.max_weight, rr.weight_sum
     local failed_count = 1
-    local failed_flag = false
 
     repeat
-        idx = idx % srvs_len + 1
-        if idx == 1 then
-            cw = cw - gcd
-            if cw <= 0 then
-                cw = max_weight
-                if cw == 0 then
-                    return nil, "all servers have 0 weight"
-                end
+        index = index % srvs_len + 1
+        if index == 1 then
+            current_weight = current_weight - gcd
+            if current_weight <= 0 then
+                current_weight = max_weight
             end
         end
 
-        local srv = servers[idx]
-        if srv.weight >= cw or failed_flag then
-            local state = { idx = idx, cw = cw }
+        local srv = servers[index]
+        if srv.effective_weight >= current_weight then
+            cls.rr.index, cls.rr.current_weight = index, current_weight
             if verify_server_status then
                 if verify_server_status(srv) then
-                    failed_flag = false
-                    return srv, state
+                    if srv.effective_weight ~= srv.weight then
+                        srv.effective_weight = srv.weight
+                        _M.reset_round_robin_state(cls)
+                    end
+                    return srv
                 else
-                    failed_flag = true
+                    if srv.effective_weight > 1 then
+                        srv.effective_weight = 1
+                        _M.reset_round_robin_state(cls)
+                        local rr = cls.rr
+                        gcd, max_weight, weight_sum = rr.gcd, rr.max_weight, rr.weight_sum
+                        index, current_weight, failed_count = 0, 0, -1
+                    end
                     failed_count = failed_count + 1
                 end
             else
-                return srv, state
+                return srv
             end
         end
-    until failed_count > srvs_len
+    until failed_count > weight_sum
 
     return nil, "no servers available"
 end
@@ -308,13 +324,11 @@ local function try_cluster_round_robin(skey, ups, cls, callback, try_again)
         return
     end
 
-    local rr = cls.rr
     for i = 1, srvs_len, 1 do
-        local srv, state = _M.select_round_robin_server(cls, verify_server_status)
+        local srv, err = _M.select_round_robin_server(cls, verify_server_status)
         if not srv then
-            return nil, state, try
+            return nil, err, try
         else
-            rr.idx, rr.cw = state.idx, state.cw
             local res, err = callback(srv.host, srv.port)
             if check_res(ups, res) then
                 return res
@@ -334,7 +348,7 @@ local function try_cluster_round_robin(skey, ups, cls, callback, try_again)
 end
 
 
-function _M.try_cluster_round_robin(clusters, update_rr_state, verify_server_status, callback, opts)
+function _M.try_cluster_round_robin(clusters, verify_server_status, callback, opts)
     local try, cluster_key = opts.try, opts.cluster_key
     local break_flag = false
 
@@ -343,13 +357,9 @@ function _M.try_cluster_round_robin(clusters, update_rr_state, verify_server_sta
         local cls = clusters[ckey]
         if type(cls) == "table" and type(cls.servers) == "table" and next(cls.servers) then
             for i = 1, #cls.servers, 1 do
-                if update_rr_state then
-                    update_rr_state(ckey, cls)
-                end
-
                 local srv, state = _M.select_round_robin_server(cls, verify_server_status)
                 if srv then
-                    res, err = callback(srv, ckey, state)
+                    res, err = callback(srv, ckey)
                     if res then
                         return res
                     end
@@ -835,8 +845,7 @@ function _M.prepare_checker(config)
             upstream.checkups[skey] = table_dup(ups)
             for level, cls in pairs(upstream.checkups[skey].cluster) do
                 extract_servers_from_upstream(skey, cls)
-                cls.rr = { idx = 0, cw = 0 }
-                cls.rr.gcd, cls.rr.max_weight = _M.calc_gcd_weight(cls.servers)
+                _M.reset_round_robin_state(cls)
             end
         end
     end
