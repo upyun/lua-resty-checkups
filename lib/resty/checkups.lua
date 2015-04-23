@@ -172,6 +172,11 @@ end
 
 
 function _M.select_round_robin_server(cls, verify_server_status)
+    -- The algo below may look messy, but is actually very simple it calculates
+    -- the GCD  and subtracts it on every iteration, what interleaves endpoints
+    -- and allows us not to build an iterator every time we readjust weights.
+    -- https://github.com/mailgun/vulcan/blob/master/loadbalance/roundrobin/roundrobin.go
+
     local servers = cls.servers
 
     if type(servers) ~= "table" or not next(servers) then
@@ -180,6 +185,7 @@ function _M.select_round_robin_server(cls, verify_server_status)
 
     local srvs_len = #servers
     local rr = cls.rr
+    -- weighted round robin state, idx -> index, cw -> current_weight
     local idx, cw = rr.idx, rr.cw
     local gcd, max_weight = rr.gcd, rr.max_weight
     local failed_count = 1
@@ -316,7 +322,7 @@ local function try_cluster_round_robin(skey, ups, cls, callback, try_again)
 
             try = try - 1
             if try < 1 then -- max try times
-                return nil, err
+                return res, err
             end
         end
     end
