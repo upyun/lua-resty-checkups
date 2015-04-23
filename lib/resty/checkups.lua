@@ -340,12 +340,8 @@ function _M.try_cluster_round_robin(clusters, update_rr_state, verify_server_sta
 
     local res, err
     for _, ckey in ipairs(cluster_key) do
-        (function()
-            local cls = clusters[ckey]
-            if not (type(cls) == "table" and type(cls.servers) == "table" and next(cls.servers)) then
-                return
-            end
-
+        local cls = clusters[ckey]
+        if type(cls) == "table" and type(cls.servers) == "table" and next(cls.servers) then
             for i = 1, #cls.servers, 1 do
                 if update_rr_state then
                     update_rr_state(ckey, cls)
@@ -353,7 +349,7 @@ function _M.try_cluster_round_robin(clusters, update_rr_state, verify_server_sta
 
                 local srv, state = _M.select_round_robin_server(cls, verify_server_status)
                 if srv then
-                    local res, err = callback(srv, ckey, state)
+                    res, err = callback(srv, ckey, state)
                     if res then
                         return res
                     end
@@ -365,10 +361,10 @@ function _M.try_cluster_round_robin(clusters, update_rr_state, verify_server_sta
                     end
                 end
             end
-        end)()
 
-        if break_flag then
-            break
+            if break_flag then
+                break
+            end
         end
     end
 

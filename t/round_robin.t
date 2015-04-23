@@ -315,6 +315,8 @@ FFFHHHno upstream available
                     ip_black_lists:set(str_format("%s:%s:%d", "bucket", srv.host, srv.port), 1, 10)
                     return nil, "bad status"
                 end
+
+                return res, " port: " .. srv.port
             end
 
             local update_rr_state = function(ckey, cls)
@@ -335,7 +337,7 @@ FFFHHHno upstream available
 
             local opts = { try = 20, cluster_key = {"ctn", "cun", "cmn"} }
             for i = 1, 5, 1 do
-                local ok, err = checkups.try_cluster_round_robin(metadata,
+                local res, err = checkups.try_cluster_round_robin(metadata,
                     update_rr_state, verify_server_status, callback, opts)
                 if err then
                     ngx.say(err)
@@ -344,7 +346,16 @@ FFFHHHno upstream available
             ngx.sleep(10)
 
             for i = 1, 5, 1 do
-                local ok, err = checkups.try_cluster_round_robin(metadata,
+                local res, err = checkups.try_cluster_round_robin(metadata,
+                    update_rr_state, verify_server_status, callback, opts)
+                if err then
+                    ngx.say(err)
+                end
+            end
+
+            opts.try = 2
+            for i = 1, 5, 1 do
+                local res, err = checkups.try_cluster_round_robin(metadata,
                     update_rr_state, verify_server_status, callback, opts)
                 if err then
                     ngx.say(err)
@@ -355,14 +366,19 @@ FFFHHHno upstream available
 --- request
 GET /t
 --- response_body
-A0EFFno servers available
-AAEEFFno servers available
-0AEEFFno servers available
-A0EEFFno servers available
-AAEEFFno servers available
-0AEFFno servers available
-A0EEFFno servers available
-AAEEFFno servers available
-0AEEFFno servers available
-A0EEFFno servers available
+A0EFF port: 12356
+AAEEFF port: 12356
+0AEEFF port: 12356
+A0EEFF port: 12356
+AAEEFF port: 12356
+0AEFF port: 12356
+A0EEFF port: 12356
+AAEEFF port: 12356
+0AEEFF port: 12356
+A0EEFF port: 12356
+AA port: 12351
+0A port: 12351
+A0 port: 12350
+AA port: 12351
+0A port: 12351
 --- timeout: 20
