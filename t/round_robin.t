@@ -147,7 +147,7 @@ GET /t
             end
 
             for i = 1, 5, 1 do
-                local ok, err = checkups.ready_ok("multi_key", cb_ok, {cluster_key = {default = "c1", backup = "c2"}})
+                local ok, err = checkups.ready_ok("multi_level", cb_ok)
                 if i ~= 5 then
                     ngx.print(" ")
                 end
@@ -156,7 +156,7 @@ GET /t
     }
 --- request
 GET /t
---- response_body: EEEHHH FEFHHH EEFHHH EFEHHH EFEHHH
+--- response_body: EFH EFH EFH EFH EFH
 
 === TEST 4: Round robin is consistent, try by key
 --- http_config eval
@@ -218,7 +218,7 @@ GET /t
     }
 --- request
 GET /t
---- response_body: EEEHHH FEFHHH EEFHHH EFEHHH EFEHHH
+--- response_body: EFH EFH EFH EFH EFH
 
 === TEST 6: Round robin with multiple fake hosts and large weight, try by key
 --- http_config eval
@@ -240,6 +240,7 @@ GET /t
 
             local ok, err = checkups.ready_ok("multi_fake_c1", cb_ok, {cluster_key = {default = "c1", backup = "c2"}})
             if err then
+                ngx.print(" ")
                 ngx.say(err)
             end
         ';
@@ -247,7 +248,7 @@ GET /t
 --- request
 GET /t
 --- response_body
-FFFHHHno upstream available
+FH round robin: no servers available
 --- timeout: 10
 
 === TEST 7: Round robin interface
@@ -260,29 +261,23 @@ FFFHHHno upstream available
 --- request
 GET /t
 --- response_body
-G00DEFAF port: 12356
-0A0EEAFF port: 12356
-A00EEAFA port: 12351
-0A0EEFFA port: 12351
-A00EEFAF port: 12356
+G0ADEFA round robin: no servers available
+0AEAF round robin: no servers available
+0AEAF round robin: no servers available
+0AEAF round robin: no servers available
+0AEAF round robin: no servers available
 
-0A0DEFAF port: 12356
-AG0EEAFF port: 12356
-00AEEAFA port: 12351
-0A0EEFFA port: 12351
-00AEEFAF port: 12356
+G0ADEFA round robin: no servers available
+0AEAF round robin: no servers available
+0AEAF round robin: no servers available
+0AEAF round robin: no servers available
+0AEAF round robin: no servers available
 
 0A port: 12351
-00 port: 12350
 0A port: 12351
 0A port: 12351
-00 port: 12350
+0A port: 12351
+0A port: 12351
 
-0
-A
-0
-A
-0
-0
-
+0000A0A000A0A000A0A0|
 --- timeout: 30

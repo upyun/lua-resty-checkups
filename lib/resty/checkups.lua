@@ -9,6 +9,8 @@ local str_format = string.format
 local lower      = string.lower
 local byte       = string.byte
 local floor      = math.floor
+local ceil       = math.ceil
+local sqrt       = math.sqrt
 local tab_insert = table.insert
 
 local ERR  = ngx.ERR
@@ -29,7 +31,7 @@ local CHECKUP_TIMER_KEY = "checkups:timer"
 local CHECKUP_LAST_CHECK_TIME_KEY = "checkups:last_check_time"
 local CHECKUP_TIMER_ALIVE_KEY = "checkups:timer_alive"
 
-local PEER_STATUS_PREFIX = "peer_status:"
+local PEER_STATUS_PREFIX = "checkups:peer_status:"
 
 local upstream = {}
 local peer_id_dict = {}
@@ -106,16 +108,16 @@ local function update_peer_status(peer_key, status, msg, sensibility)
 end
 
 
-local function check_res(ups, res)
+local function check_res(res, check_opts)
     if res then
-        local ups_type = ups.typ
+        local typ = check_opts.typ
 
-        if ups_type == "http" and type(res) == "table"
+        if typ == "http" and type(res) == "table"
             and res.status then
             local status = tonumber(res.status)
-            local opts = ups.http_opts
-            if opts and opts.statuses and
-                opts.statuses[status] == false then
+            local http_opts = check_opts.http_opts
+            if http_opts and http_opts.statuses and
+                http_opts.statuses[status] == false then
                 return false
             end
         end
@@ -183,7 +185,7 @@ function _M.reset_round_robin_state(cls)
 end
 
 
-function _M.select_round_robin_server(cls, verify_server_status)
+function _M.select_round_robin_server(ckey, cls, verify_server_status, bad_servers)
     -- The algo below may look messy, but is actually very simple it calculates
     -- the GCD  and subtracts it on every iteration, what interleaves endpoints
     -- and allows us not to build an iterator every time we readjust weights.
@@ -196,6 +198,10 @@ function _M.select_round_robin_server(cls, verify_server_status)
     end
 
     local srvs_len = #servers
+    if srvs_len == 1 then
+        return servers[1]
+    end
+
     local rr = cls.rr
     local index, current_weight = rr.index, rr.current_weight
     local gcd, max_weight, weight_sum = rr.gcd, rr.max_weight, rr.weight_sum
@@ -213,30 +219,34 @@ function _M.select_round_robin_server(cls, verify_server_status)
         local srv = servers[index]
         if srv.effective_weight >= current_weight then
             cls.rr.index, cls.rr.current_weight = index, current_weight
-            if verify_server_status then
-                if verify_server_status(srv) then
-                    if srv.effective_weight ~= srv.weight then
-                        srv.effective_weight = srv.weight
-                        _M.reset_round_robin_state(cls)
+            if not bad_servers[index] then
+                if verify_server_status then
+                    if verify_server_status(srv, ckey) then
+                        if srv.effective_weight ~= srv.weight then
+                            srv.effective_weight = srv.weight
+                            _M.reset_round_robin_state(cls)
+                        end
+                        return srv, index
+                    else
+                        if srv.effective_weight > 1 then
+                            srv.effective_weight = 1
+                            _M.reset_round_robin_state(cls)
+                            local rr = cls.rr
+                            gcd, max_weight, weight_sum = rr.gcd, rr.max_weight, rr.weight_sum
+                            index, current_weight, failed_count = 0, 0, 0
+                        end
+                        failed_count = failed_count + 1
                     end
-                    return srv
                 else
-                    if srv.effective_weight > 1 then
-                        srv.effective_weight = 1
-                        _M.reset_round_robin_state(cls)
-                        local rr = cls.rr
-                        gcd, max_weight, weight_sum = rr.gcd, rr.max_weight, rr.weight_sum
-                        index, current_weight, failed_count = 0, 0, -1
-                    end
-                    failed_count = failed_count + 1
+                    return srv, index
                 end
             else
-                return srv
+                failed_count = failed_count + 1
             end
         end
     until failed_count > weight_sum
 
-    return nil, "no servers available"
+    return nil, nil, "round robin: no servers available"
 end
 
 
@@ -249,7 +259,7 @@ local function try_server(skey, ups, srv, callback, try)
     if peer_status == nil or peer_status.status ~= _M.STATUS_ERR then
         for i = 1, try, 1 do
             res, err = callback(srv.host, srv.port)
-            if check_res(ups, res) then
+            if check_res(res, ups) then
                 return res
             end
         end
@@ -277,7 +287,7 @@ end
 local function try_cluster_consistent_hash(skey, ups, cls, callback, hash_key)
     local server_len = #cls.servers
     if server_len == 0 then
-        return nil, "no server available", true
+        return nil, true, "no server available"
     end
 
     local hash = hash_value(hash_key)
@@ -301,7 +311,57 @@ local function try_cluster_consistent_hash(skey, ups, cls, callback, hash_key)
     end
 
     -- continue to next level
-    return nil, err, true
+    return nil, true, err
+end
+
+
+local try_servers_round_robin = function(ckey, cls, verify_server_status, callback, opts)
+    local try, check_res, check_opts, srv_flag = opts.try, opts.check_res, opts.check_opts, opts.srv_flag
+
+    if not check_res then
+        check_res = function(res)
+            if res then
+                return true
+            end
+            return false
+        end
+    end
+
+    local bad_servers = {}
+    local err
+    for i = 1, #cls.servers, 1 do
+        local srv, index, _err = _M.select_round_robin_server(ckey, cls, verify_server_status, bad_servers)
+        if not srv then
+            return nil, try, _err
+        else
+            local res, _err
+            if srv_flag then
+                res, _err = callback(srv.host, srv.port)
+            else
+                res, _err = callback(srv, ckey)
+            end
+
+            if check_res(res, check_opts) then
+                return res
+            end
+
+            try = try - 1
+            if try < 1 then
+                return nil, nil, _err
+            end
+
+            local servers = cls.servers
+            if servers[index].effective_weight > 1 then
+                servers[index].effective_weight = ceil(sqrt(servers[index].effective_weight))
+                _M.reset_round_robin_state(cls)
+            end
+
+            bad_servers[index] = true
+            err = _err
+        end
+    end
+
+    return nil, try, err
 end
 
 
@@ -324,27 +384,18 @@ local function try_cluster_round_robin(skey, ups, cls, callback, try_again)
         return
     end
 
-    for i = 1, srvs_len, 1 do
-        local srv, err = _M.select_round_robin_server(cls, verify_server_status)
-        if not srv then
-            return nil, err, try
-        else
-            local res, err = callback(srv.host, srv.port)
-            if check_res(ups, res) then
-                return res
-            end
-
-            try = try - 1
-            if try < 1 then -- max try times
-                return res, err
-            end
-        end
+    local opts = { try = try, check_res = check_res, check_opts = ups, srv_flag = true }
+    local res, try, err = try_servers_round_robin(nil, cls, verify_server_status, callback, opts)
+    if res then
+        return res
     end
 
     -- continue to next level
-    if try > 0 then
-        return nil, nil, try
+    if try and try > 0 then
+        return nil, try, err
     end
+
+    return nil, nil, err
 end
 
 
@@ -352,29 +403,22 @@ function _M.try_cluster_round_robin(clusters, verify_server_status, callback, op
     local try, cluster_key = opts.try, opts.cluster_key
     local break_flag = false
 
-    local res, err
+    local err
     for _, ckey in ipairs(cluster_key) do
         local cls = clusters[ckey]
         if type(cls) == "table" and type(cls.servers) == "table" and next(cls.servers) then
-            for i = 1, #cls.servers, 1 do
-                local srv, state = _M.select_round_robin_server(cls, verify_server_status)
-                if srv then
-                    res, err = callback(srv, ckey)
-                    if res then
-                        return res
-                    end
-
-                    try = try - 1
-                    if try < 1 then
-                        break_flag = true
-                        break
-                    end
-                end
+            local opts = { try = try }
+            local res, _try, _err = try_servers_round_robin(ckey, cls, verify_server_status, callback, opts)
+            if res then
+                return res
             end
 
-            if break_flag then
-                break
+            if not _try or _try < 1 then
+                return nil, _err
             end
+
+            try = _try
+            err = _err
         end
     end
 
@@ -408,15 +452,22 @@ function _M.ready_ok(skey, callback, opts)
             opts.cluster_key.backup}) do
             local cls = ups.cluster[cls_key]
             if cls then
-                res, err, cont = try_cluster(skey, ups, cls, callback, opts, try_again)
+                res, cont, err = try_cluster(skey, ups, cls, callback, opts, try_again)
                 if res then
                     return res, err
                 end
 
-                -- continue to next key?
-                if not cont or cont < 1 then break end
 
-                try_again = cont
+                -- continue to next key?
+                if not cont then break end
+
+                if type(cont) == "number" then
+                    if cont < 1 then
+                        break
+                    else
+                        try_again = cont
+                    end
+                end
             end
         end
         return nil, err or "no upstream available"
@@ -424,7 +475,7 @@ function _M.ready_ok(skey, callback, opts)
 
     -- try by level
     for level, cls in ipairs(ups.cluster) do
-        res, err, cont = try_cluster(skey, ups, cls, callback, opts, try_again)
+        res, cont, err = try_cluster(skey, ups, cls, callback, opts, try_again)
         if res then
             return res, err
         end
@@ -432,7 +483,13 @@ function _M.ready_ok(skey, callback, opts)
         -- continue to next level?
         if not cont then break end
 
-        try_again = cont
+        if type(cont) == "number" then
+            if cont < 1 then
+                break
+            else
+                try_again = cont
+            end
+        end
     end
     return nil, err or "no upstream available"
 end

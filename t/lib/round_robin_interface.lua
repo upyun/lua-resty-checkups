@@ -36,6 +36,14 @@ local function set_cdn_data(bucket)
     end
 end
 
+local function del_cdn_data(bucket)
+    local key = gen_rr_key(bucket)
+    local ok, err = rr_state:delete(key)
+    if not ok then
+        ngx.log(ngx.WARN, "del_cdn_data: ", err)
+    end
+end
+
 local function get_cdn_data(bucket)
     local cdn_data
     local sh_key = gen_rr_key(bucket)
@@ -82,8 +90,6 @@ local function get_cdn_data(bucket)
     return cdn_data
 end
 
-ngx.ctx.cdn_data = get_cdn_data("bucket")
-
 local verify_server_status = function(srv)
     if ip_black_lists:get(str_format("%s:%s:%d", "bucket", srv.host, srv.port)) then
         return false
@@ -108,27 +114,35 @@ local callback = function(srv, ckey)
     return res, " port: " .. srv.port
 end
 
+del_cdn_data("bucket")
+ngx.ctx.cdn_data = get_cdn_data("bucket")
 local opts = { try = 20, cluster_key = {"ctn", "cun", "cmn"} }
 for i = 1, 5, 1 do
     local res, err = checkups.try_cluster_round_robin(ngx.ctx.cdn_data, verify_server_status, callback, opts)
     set_cdn_data("bucket")
     if err then
+        ngx.print(' ')
         ngx.say(err)
     end
 end
-ngx.say("")
+ngx.say('')
 ngx.sleep(10)
 
+del_cdn_data("bucket")
+ngx.ctx.cdn_data = get_cdn_data("bucket")
 for i = 1, 5, 1 do
     local res, err = checkups.try_cluster_round_robin(ngx.ctx.cdn_data, verify_server_status, callback, opts)
     set_cdn_data("bucket")
     if err then
+        ngx.print(' ')
         ngx.say(err)
     end
 end
-ngx.say("")
+ngx.say('')
 
 opts.try = 2
+del_cdn_data("bucket")
+ngx.ctx.cdn_data = get_cdn_data("bucket")
 for i = 1, 5, 1 do
     local res, err = checkups.try_cluster_round_robin(ngx.ctx.cdn_data, verify_server_status, callback, opts)
     set_cdn_data("bucket")
@@ -136,7 +150,7 @@ for i = 1, 5, 1 do
         ngx.say(err)
     end
 end
-ngx.say("")
+ngx.say('')
 ngx.sleep(10)
 
 local callback = function(srv, ckey)
@@ -169,17 +183,20 @@ local callback = function(srv, ckey)
     return res
 end
 
+del_cdn_data("bucket")
+ngx.ctx.cdn_data = get_cdn_data("bucket")
 local opts = { try = 5, cluster_key = {"ctn", "cun", "cmn"} }
-for i = 1, 6, 1 do
+for i = 1, 20, 1 do
     local res, err = checkups.try_cluster_round_robin(ngx.ctx.cdn_data, verify_server_status, callback, opts)
     set_cdn_data("bucket")
     if res then
         ngx.print(dict[res.port])
     end
+
     if err then
         ngx.say(err)
     end
-    ngx.say("")
 end
+ngx.say('|')
 
 ngx.exit(ngx.HTTP_OK)
