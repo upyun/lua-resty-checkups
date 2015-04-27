@@ -91,6 +91,10 @@ local function get_cdn_data(bucket)
 end
 
 local verify_server_status = function(srv)
+    if srv.port == 12356 then
+        ngx.print(' ' .. srv.effective_weight .. ' ')
+    end
+
     if ip_black_lists:get(str_format("%s:%s:%d", "bucket", srv.host, srv.port)) then
         return false
     end
@@ -128,6 +132,7 @@ end
 ngx.say('')
 ngx.sleep(10)
 
+
 del_cdn_data("bucket")
 ngx.ctx.cdn_data = get_cdn_data("bucket")
 for i = 1, 5, 1 do
@@ -139,6 +144,46 @@ for i = 1, 5, 1 do
     end
 end
 ngx.say('')
+
+
+local _callback = function(srv, ckey)
+    ngx.print(dict[srv.port])
+
+    local res
+    if srv.port == 12354 or srv.port == 12357 then
+        res = { status = 502 }
+    elseif srv.port == 12356 then
+        res = { status = 200 }
+    end
+
+    if res and res.status == 502 then
+        ip_black_lists:set(str_format("%s:%s:%d", "bucket", srv.host, srv.port), 1, 10)
+        return nil, "bad status"
+    end
+
+    return res, " port: " .. srv.port
+end
+
+del_cdn_data("bucket")
+ngx.ctx.cdn_data = get_cdn_data("bucket")
+for i = 1, 5, 1 do
+    ngx.print(' ')
+    local res, err
+    if i < 3 then
+        res, err = checkups.try_cluster_round_robin(ngx.ctx.cdn_data, verify_server_status, callback, opts)
+    else
+        res, err = checkups.try_cluster_round_robin(ngx.ctx.cdn_data, verify_server_status, _callback, opts)
+    end
+
+    set_cdn_data("bucket")
+    if err then
+        ngx.print(' ')
+        ngx.say(err)
+    end
+end
+ngx.say('')
+ngx.say('')
+
 
 opts.try = 2
 del_cdn_data("bucket")
@@ -152,6 +197,7 @@ for i = 1, 5, 1 do
 end
 ngx.say('')
 ngx.sleep(10)
+
 
 local callback = function(srv, ckey)
     local check_res = function(res, err)

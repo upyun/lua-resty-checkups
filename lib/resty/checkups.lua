@@ -9,7 +9,6 @@ local str_format = string.format
 local lower      = string.lower
 local byte       = string.byte
 local floor      = math.floor
-local ceil       = math.ceil
 local sqrt       = math.sqrt
 local tab_insert = table.insert
 
@@ -199,7 +198,7 @@ function _M.select_round_robin_server(ckey, cls, verify_server_status, bad_serve
 
     local srvs_len = #servers
     if srvs_len == 1 then
-        return servers[1]
+        return servers[1], 1
     end
 
     local rr = cls.rr
@@ -342,6 +341,10 @@ local try_servers_round_robin = function(ckey, cls, verify_server_status, callba
             end
 
             if check_res(res, check_opts) then
+                if srv.effective_weight ~= srv.weight then
+                    srv.effective_weight = srv.weight
+                    _M.reset_round_robin_state(cls)
+                end
                 return res
             end
 
@@ -350,9 +353,8 @@ local try_servers_round_robin = function(ckey, cls, verify_server_status, callba
                 return nil, nil, _err
             end
 
-            local servers = cls.servers
-            if servers[index].effective_weight > 1 then
-                servers[index].effective_weight = ceil(sqrt(servers[index].effective_weight))
+            if srv.effective_weight > 1 then
+                srv.effective_weight = floor(sqrt(srv.effective_weight))
                 _M.reset_round_robin_state(cls)
             end
 

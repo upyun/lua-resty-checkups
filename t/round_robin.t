@@ -261,17 +261,21 @@ FH round robin: no servers available
 --- request
 GET /t
 --- response_body
-G0ADEFA round robin: no servers available
-0AEAF round robin: no servers available
-0AEAF round robin: no servers available
-0AEAF round robin: no servers available
-0AEAF round robin: no servers available
+G0ADE 3 FA round robin: no servers available
+0AEA 1 F round robin: no servers available
+0AEA 1 F round robin: no servers available
+0AEA 1 F round robin: no servers available
+0AEA 1 F round robin: no servers available
 
-G0ADEFA round robin: no servers available
-0AEAF round robin: no servers available
-0AEAF round robin: no servers available
-0AEAF round robin: no servers available
-0AEAF round robin: no servers available
+G0ADE 3 FA round robin: no servers available
+0AEA 1 F round robin: no servers available
+0AEA 1 F round robin: no servers available
+0AEA 1 F round robin: no servers available
+0AEA 1 F round robin: no servers available
+
+ 0AE 3 FA round robin: no servers available
+ 0AEA 1 F round robin: no servers available
+ 0AEA 1 F 0AE 3 F 0AE 3 F
 
 0A port: 12351
 0A port: 12351
