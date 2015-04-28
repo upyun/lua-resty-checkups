@@ -191,16 +191,21 @@ function _M.select_round_robin_server(ckey, cls, verify_server_status, bad_serve
     -- the GCD  and subtracts it on every iteration, what interleaves endpoints
     -- and allows us not to build an iterator every time we readjust weights.
     -- https://github.com/mailgun/vulcan/blob/master/loadbalance/roundrobin/roundrobin.go
-
+    local err_msg = "round robin: no servers available"
     local servers = cls.servers
 
     if type(servers) ~= "table" or not next(servers) then
-        return nil, nil, "no servers"
+        return nil, nil, "round robin: no servers in this cluster"
     end
 
     local srvs_len = #servers
     if srvs_len == 1 then
-        return servers[1], 1
+        local srv = servers[1]
+        if not verify_server_status or verify_server_status(srv, ckey) then
+            return srv, 1
+        end
+
+        return nil, nil, err_msg
     end
 
     local rr = cls.rr
@@ -247,7 +252,7 @@ function _M.select_round_robin_server(ckey, cls, verify_server_status, bad_serve
         end
     until failed_count > weight_sum
 
-    return nil, nil, "round robin: no servers available"
+    return nil, nil, err_msg
 end
 
 
