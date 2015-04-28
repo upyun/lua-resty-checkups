@@ -25,7 +25,7 @@ local ERR  = ngx.ERR
 local WARN = ngx.WARN
 
 
-local _M = { _VERSION = "0.07",
+local _M = { _VERSION = "0.08",
              STATUS_OK = 0, STATUS_ERR = 1, STATUS_UNSTABLE = 2 }
 
 local CHECKUP_TIMER_KEY = "checkups:timer"
