@@ -153,7 +153,7 @@ end
 
 
 function _M.calc_gcd_weight(servers)
-    -- calculate the GCD and maximum weight value from a set of servers
+    -- calculate the GCD, maximum weight and weight sum value from a set of servers
     local gcd, max_weight, weight_sum = 0, 0, 0
 
     for _, srv in ipairs(servers) do
