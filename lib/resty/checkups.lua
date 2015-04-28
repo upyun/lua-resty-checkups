@@ -195,7 +195,7 @@ function _M.select_round_robin_server(ckey, cls, verify_server_status, bad_serve
     local servers = cls.servers
 
     if type(servers) ~= "table" or not next(servers) then
-        return nil, "no servers"
+        return nil, nil, "no servers"
     end
 
     local srvs_len = #servers
