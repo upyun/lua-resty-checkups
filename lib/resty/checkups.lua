@@ -145,7 +145,7 @@ end
 
 
 local function _extract_srv_host_port(name)
-    local m = re_match(name, [[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)(?::([0-9]+))?]])
+    local m = re_match(name, [[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)(?::([0-9]+))?]], "jo")
     if not m then
         return
     end
@@ -575,7 +575,7 @@ local heartbeat = {
 
         red:set_keepalive(10000, 100)
 
-        local iter, err = re_gmatch(res, [[([a-zA-Z_]+):(.+?)\r\n]], "i")
+        local iter, err = re_gmatch(res, [[([a-zA-Z_]+):(.+?)\r\n]], "jo")
         if not iter then
             replication.err = err
             return statuses
