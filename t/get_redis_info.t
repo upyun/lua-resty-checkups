@@ -54,14 +54,27 @@ __DATA__
 
             local st = checkups.get_status()
             ngx.say(st["cls:redis"][1][1].status)
+            ngx.say(st["cls:redis"][1][1].redis_version)
             ngx.say(st["cls:redis"][1][1].msg)
             ngx.say(st["cls:redis"][1][1].replication.role)
+            ngx.say(st["cls:redis"][1][1].replication.master_link_status)
+            ngx.say(st["cls:redis"][1][1].replication.master_host)
+            ngx.say(st["cls:redis"][1][1].replication.master_port)
+            ngx.say(st["cls:redis"][1][1].replication.master_link_down_since_seconds)
+            ngx.say(st["cls:redis"][1][1].replication.master_last_io_seconds_ago)
 
+            ngx.say("")
             ngx.sleep(2)
             local st = checkups.get_status()
             ngx.say(st["cls:redis"][1][1].status)
+            ngx.say(st["cls:redis"][1][1].redis_version)
             ngx.say(st["cls:redis"][1][1].msg)
             ngx.say(st["cls:redis"][1][1].replication.role)
+            ngx.say(st["cls:redis"][1][1].replication.master_link_status)
+            ngx.say(st["cls:redis"][1][1].replication.master_host)
+            ngx.say(st["cls:redis"][1][1].replication.master_port)
+            ngx.say(st["cls:redis"][1][1].replication.master_link_down_since_seconds)
+            ngx.say(st["cls:redis"][1][1].replication.master_last_io_seconds_ago)
         ';
     }
 --- request
@@ -69,11 +82,22 @@ GET /t
 --- response_body_like
 127.0.0.1:6379 OK
 ok
+\d\.\d\.\d
 null
 master|slave
-0
+nil|down|up
+nil|\d.\d.\d.\d
+nil|\d
+nil|\d
+nil|\d
+
 ok
+\d\.\d\.\d
 null
 master|slave
-0
+nil|down|up
+nil|\d.\d.\d.\d
+nil|\d
+nil|\d
+nil|\d
 --- timeout: 10

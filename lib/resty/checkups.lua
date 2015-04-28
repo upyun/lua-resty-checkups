@@ -10,6 +10,7 @@ local lower      = string.lower
 local byte       = string.byte
 local floor      = math.floor
 local sqrt       = math.sqrt
+local tab_concat = table.concat
 local tab_insert = table.insert
 
 local tcp       = ngx.socket.tcp
@@ -548,11 +549,29 @@ local heartbeat = {
             replication = replication
         }
 
-        local res, err = red:info("replication")
-        if not res then
-            replication.err = err
-            return statuses
+        local res, got_all_info = {}, false
+
+        local info, err = red:info("replication")
+        if not info then
+            info, err = red:info()
+            if not info then
+                replication.err = err
+                return statuses
+            end
+
+            got_all_info = true
         end
+
+        tab_insert(res, info)
+
+        if not got_all_info then
+            local info, err = red:info("server")
+            if info then
+                tab_insert(res, info)
+            end
+        end
+
+        res = tab_concat(res)
 
         red:set_keepalive(10000, 100)
 
@@ -563,8 +582,16 @@ local heartbeat = {
         end
 
         local replication_field = {
-            role = true, master_link_status = true,
-            master_link_down_since_seconds = true
+            role                           = true,
+            master_host                    = true,
+            master_port                    = true,
+            master_link_status             = true,
+            master_link_down_since_seconds = true,
+            master_last_io_seconds_ago     = true,
+        }
+
+        local other_field = {
+            redis_version = true,
         }
 
         while true do
@@ -581,10 +608,15 @@ local heartbeat = {
             if replication_field[lower(m[1])] then
                 replication[m[1]] = m[2]
             end
+
+            if other_field[lower(m[1])] then
+                statuses[m[1]] = m[2]
+            end
         end
 
         if replication.master_link_status == "down" then
             statuses.status = _M.STATUS_ERR
+            statuses.msg = "master link status: down"
         end
 
         return statuses
