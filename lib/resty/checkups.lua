@@ -12,9 +12,6 @@ local floor      = math.floor
 local sqrt       = math.sqrt
 local tab_insert = table.insert
 
-local ERR  = ngx.ERR
-local WARN = ngx.WARN
-
 local tcp       = ngx.socket.tcp
 local localtime = ngx.localtime
 local re_find   = ngx.re.find
@@ -22,6 +19,11 @@ local re_match  = ngx.re.match
 local re_gmatch = ngx.re.gmatch
 local mutex     = ngx.shared.mutex
 local state     = ngx.shared.state
+local log       = ngx.log
+
+local ERR  = ngx.ERR
+local WARN = ngx.WARN
+
 
 local _M = { _VERSION = "0.07",
              STATUS_OK = 0, STATUS_ERR = 1, STATUS_UNSTABLE = 2 }
@@ -41,7 +43,7 @@ local function get_lock(key)
     local lock = lock:new("locks")
     local elapsed, err = lock:lock(key)
     if not elapsed then
-        ngx.log(WARN, "failed to acquire the lock: " .. key .. ', ' .. err)
+        log(WARN, "failed to acquire the lock: ", key, ", ", err)
         return nil, err
     end
 
@@ -52,7 +54,7 @@ end
 local function release_lock(lock)
     local ok, err = lock:unlock()
     if not ok then
-        ngx.log(ngx.WARN, "failed to unlock: ", err)
+        log(WARN, "failed to unlock: ", err)
     end
 end
 
@@ -66,7 +68,7 @@ local function update_peer_status(peer_key, status, msg, sensibility)
 
     local old_status, err = state:get(status_key)
     if err then
-        ngx.log(ERR, "get old status " .. status_key .. ' ' .. err)
+        log(ERR, "get old status ", status_key, " ", err)
         return
     end
 
@@ -102,7 +104,7 @@ local function update_peer_status(peer_key, status, msg, sensibility)
 
     local ok, err = state:set(status_key, cjson.encode(old_status))
     if not ok then
-        ngx.log(ERR, "failed to set new status " .. err)
+        log(ERR, "failed to set new status ", err)
     end
 end
 
@@ -503,8 +505,7 @@ local heartbeat = {
         sock:settimeout(ups.timeout * 1000)
         local ok, err = sock:connect(host, port)
         if not ok then
-            ngx.log(ERR, "failed to connect: ", host, ":",
-                    tostring(port), " ", err)
+            log(ERR, "failed to connect: ", host, ":", port, " ", err)
             return _M.STATUS_ERR, err
         end
 
@@ -516,8 +517,8 @@ local heartbeat = {
     redis = function (host, port, ups)
         local ok, redis = pcall(require, "resty.redis")
         if not ok then
-            ngx.log(ERR, 'failed to require redis')
-            return _M.STATUS_ERR, 'failed to require redis'
+            log(ERR, "failed to require redis")
+            return _M.STATUS_ERR, "failed to require redis"
         end
 
         local red = redis:new()
@@ -526,13 +527,13 @@ local heartbeat = {
 
         local ok, err = red:connect(host, port)
         if not ok then
-            ngx.log(ERR, "failed to connect redis: ", err)
+            log(ERR, "failed to connect redis: ", err)
             return _M.STATUS_ERR, err
         end
 
         local res, err = red:ping()
         if not res then
-            ngx.log(ERR, "failed to ping redis: ", err)
+            log(ERR, "failed to ping redis: ", err)
             return _M.STATUS_ERR, err
         end
 
@@ -583,13 +584,13 @@ local heartbeat = {
     mysql = function (host, port, ups)
         local ok, mysql = pcall(require, "resty.mysql")
         if not ok then
-            ngx.log(ERR, 'failed to require mysql')
-            return _M.STATUS_ERR, 'failed to require mysql'
+            log(ERR, "failed to require mysql")
+            return _M.STATUS_ERR, "failed to require mysql"
         end
 
         local db, err = mysql:new()
         if not db then
-            ngx.log(WARN, "failed to instantiate mysql: ", err)
+            log(WARN, "failed to instantiate mysql: ", err)
             return _M.STATUS_ERR, err
         end
 
@@ -605,8 +606,7 @@ local heartbeat = {
         }
 
         if not ok then
-            ngx.log(ERR, "faild to connect: ", err, ": ", errno,
-                    " ", sqlstate)
+            log(ERR, "faild to connect: ", err, ": ", errno, " ", sqlstate)
             return _M.STATUS_ERR, err
         end
 
@@ -620,8 +620,7 @@ local heartbeat = {
         sock:settimeout(ups.timeout * 1000)
         local ok, err = sock:connect(host, port)
         if not ok then
-            ngx.log(ERR, "failed to connect: ", host, ":",
-                    tostring(port), " ", err)
+            log(ERR, "failed to connect: ", host, ":", port, " ", err)
             return _M.STATUS_ERR, err
         end
 
@@ -635,15 +634,14 @@ local heartbeat = {
 
         local bytes, err = sock:send(req)
         if not bytes then
-            ngx.log(ERR, "failed to send request to ", host, ": ", err)
+            log(ERR, "failed to send request to ", host, ":", port, ": ", err)
             return _M.STATUS_ERR, err
         end
 
         local readline = sock:receiveuntil("\r\n")
         local status_line, err = readline()
         if not status_line then
-            ngx.log(ERR, "failed to receive status line from ",
-                host, ":", port, ": ", err)
+            log(ERR, "failed to receive status line from ", host, ":", port, ": ", err)
             return _M.STATUS_ERR, err
         end
 
@@ -652,7 +650,7 @@ local heartbeat = {
             local from, to, err = re_find(status_line,
                 [[^HTTP/\d+\.\d+\s+(\d+)]], "joi", nil, 1)
             if not from then
-                ngx.log(ERR, "bad status line from ", host, ": ", err)
+                log(ERR, "bad status line from ", host, ": ", err)
                 return _M.STATUS_ERR, err
             end
 
@@ -735,7 +733,7 @@ local function active_checkup(premature)
     if premature then
         local ok, err = mutex:set(ckey, nil)
         if not ok then
-            ngx.log(WARN, "failed to update shm: ", err)
+            log(WARN, "failed to update shm: ", err)
         end
         return
     end
@@ -752,15 +750,15 @@ local function active_checkup(premature)
 
     local ok, err = mutex:set(ckey, 1, overtime)
     if not ok then
-        ngx.log(WARN, "failed to update shm: ", err)
+        log(WARN, "failed to update shm: ", err)
     end
 
     local ok, err = ngx.timer.at(interval, active_checkup)
     if not ok then
-        ngx.log(WARN, "failed to create timer: ", err)
+        log(WARN, "failed to create timer: ", err)
         local ok, err = mutex:set(ckey, nil)
         if not ok then
-            ngx.log(WARN, "failed to update shm: ", err)
+            log(WARN, "failed to update shm: ", err)
         end
         return
     end
@@ -774,7 +772,7 @@ local function ups_status_checker(premature)
 
     local ok, up = pcall(require, "ngx.upstream")
     if not ok then
-        ngx.log(ngx.ERR, "ngx_upstream_lua module required")
+        log(ERR, "ngx_upstream_lua module required")
         return
     end
 
@@ -815,12 +813,11 @@ local function ups_status_checker(premature)
                         local ok, err = up.set_peer_down(
                             cls.upstream, up_id.backup, up_id.id, down)
                         if not ok then
-                            ngx.log(ngx.ERR, "failed to set peer down", err)
+                            log(ERR, "failed to set peer down", err)
                         end
                     end
                 elseif err then
-                    ngx.log(WARN, "get peer status error " .. status_key .. ' '
-                            .. err)
+                    log(WARN, "get peer status error ", status_key, " ", err)
                 end
             end
         end
@@ -830,7 +827,7 @@ local function ups_status_checker(premature)
     local ok, err = ngx.timer.at(interval, ups_status_checker)
     if not ok then
         ups_status_timer_created = false
-        ngx.log(WARN, "failed to create ups_status_checker: ", err)
+        log(WARN, "failed to create ups_status_checker: ", err)
     end
 end
 
@@ -861,7 +858,7 @@ local function extract_servers_from_upstream(skey, cls)
 
     local ok, up = pcall(require, "ngx.upstream")
     if not ok then
-        ngx.log(ngx.ERR, "ngx_upstream_lua module required")
+        log(ERR, "ngx_upstream_lua module required")
         return
     end
 
@@ -872,14 +869,14 @@ local function extract_servers_from_upstream(skey, cls)
     end
     local srvs, err = srvs_getter(up_key)
     if not srvs and err then
-        ngx.log(ngx.ERR, "failed to get servers in upstream ", err)
+        log(ERR, "failed to get servers in upstream ", err)
         return
     end
 
     for _, srv in ipairs(srvs) do
         local host, port = _extract_srv_host_port(srv.name)
         if not host then
-            ngx.log(ngx.ERR, "invalid server name ", srv.name)
+            log(ERR, "invalid server name: ", srv.name)
             return
         end
         peer_id_dict[_gen_key(skey, { host = host, port = port })] = {
@@ -985,19 +982,18 @@ function _M.create_checker()
     end
 
     if err then
-        ngx.log(WARN, "failed to get key from shm: ", err)
+        log(WARN, "failed to get key from shm: ", err)
         return
     end
 
     if not upstream.initialized then
-        ngx.log(ERR,
-                "create checker failed, call prepare_checker in init_by_lua")
+        log(ERR, "create checker failed, call prepare_checker in init_by_lua")
         return
     end
 
     local lock = get_lock(ckey)
     if not lock then
-        ngx.log(WARN, "failed to acquire the lock: ", err)
+        log(WARN, "failed to acquire the lock: ", err)
         return
     end
 
@@ -1010,14 +1006,14 @@ function _M.create_checker()
     -- create active checkup timer
     local ok, err = ngx.timer.at(0, active_checkup)
     if not ok then
-        ngx.log(ngx.WARN, "failed to create timer: ", err)
+        log(WARN, "failed to create timer: ", err)
         return
     end
 
     if upstream.ups_status_sync_enable and not ups_status_timer_created then
         local ok, err = ngx.timer.at(0, ups_status_checker)
         if not ok then
-            ngx.log(ngx.WARN, "failed to create ups_status_checker: ", err)
+            log(WARN, "failed to create ups_status_checker: ", err)
             return
         end
         ups_status_timer_created = true
@@ -1027,7 +1023,7 @@ function _M.create_checker()
     local ok, err = mutex:set(ckey, 1, overtime)
     if not ok then
         release_lock(lock)
-        ngx.log(WARN, "failed to update shm: ", err)
+        log(WARN, "failed to update shm: ", err)
         return
     end
 
