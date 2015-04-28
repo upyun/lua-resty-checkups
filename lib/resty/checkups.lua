@@ -583,6 +583,10 @@ local heartbeat = {
             end
         end
 
+        if replication.master_link_status == "down" then
+            statuses.status = _M.STATUS_ERR
+        end
+
         return statuses
     end,
 
