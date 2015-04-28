@@ -101,7 +101,7 @@ GET /t
 --- response_body
 127.0.0.1:12354
 127.0.0.1:12356
-127.0.0.1:12356
+127.0.0.1:12354
 --- grep_error_log eval: qr/failed to connect: 127.0.0.1:\d+ connection refused|failed to receive status line from 127.0.0.1:\d+: timeout/
 --- grep_error_log_out
 failed to receive status line from 127.0.0.1:12357: timeout
@@ -136,7 +136,7 @@ GET /t
 127.0.0.1:12356
 127.0.0.1:12356
 127.0.0.1:12354
-no upstream available
+round robin: no servers available
 --- grep_error_log eval: qr/failed to connect: 127.0.0.1:\d+ connection refused|failed to receive status line from 127.0.0.1:\d+: timeout/
 --- grep_error_log_out
 failed to receive status line from 127.0.0.1:12357: timeout
@@ -171,7 +171,7 @@ GET /t
 127.0.0.1:12356
 127.0.0.1:12356
 127.0.0.1:12354
-no upstream available
+round robin: no servers available
 --- grep_error_log eval: qr/failed to connect: 127.0.0.1:\d+ connection refused|failed to receive status line from 127.0.0.1:\d+: timeout/
 --- grep_error_log_out
 failed to receive status line from 127.0.0.1:12357: timeout
