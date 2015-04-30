@@ -199,11 +199,17 @@ function _M.select_round_robin_server(ckey, cls, verify_server_status, bad_serve
         return nil, nil, "round robin: no servers in this cluster"
     end
 
+    if type(bad_servers) ~= "table" then
+        bad_servers = {}
+    end
+
     local srvs_len = #servers
     if srvs_len == 1 then
         local srv = servers[1]
         if not verify_server_status or verify_server_status(srv, ckey) then
-            return srv, 1
+            if not bad_servers[1] then
+                return srv, 1
+            end
         end
 
         return nil, nil, err_msg
@@ -229,10 +235,6 @@ function _M.select_round_robin_server(ckey, cls, verify_server_status, bad_serve
             if not bad_servers[index] then
                 if verify_server_status then
                     if verify_server_status(srv, ckey) then
-                        if srv.effective_weight ~= srv.weight then
-                            srv.effective_weight = srv.weight
-                            _M.reset_round_robin_state(cls)
-                        end
                         return srv, index
                     else
                         if srv.effective_weight > 1 then
@@ -356,14 +358,14 @@ local try_servers_round_robin = function(ckey, cls, verify_server_status, callba
                 return res
             end
 
-            try = try - 1
-            if try < 1 then
-                return nil, nil, _err
-            end
-
             if srv.effective_weight > 1 then
                 srv.effective_weight = floor(sqrt(srv.effective_weight))
                 _M.reset_round_robin_state(cls)
+            end
+
+            try = try - 1
+            if try < 1 then
+                return nil, nil, _err
             end
 
             bad_servers[index] = true
