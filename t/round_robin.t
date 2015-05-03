@@ -285,3 +285,32 @@ G0ADE 3 FA round robin: no servers available
 
 0000A0A000A0A000A0A0|
 --- timeout: 30
+
+=== TEST 8: Round robin method, single host and callback with args
+--- http_config eval
+"$::HttpConfig" . "$::InitConfig"
+--- config
+    location = /t {
+        content_by_lua '
+            local checkups = require "resty.checkups"
+            checkups.create_checker()
+            ngx.sleep(2)
+            local cb_ok = function(host, port, ...)
+                local arg_a, arg_b = ...
+                ngx.say(host .. ":" .. port)
+                ngx.say("args:" .. arg_a .. "&" .. arg_b)
+                return 1
+            end
+
+            local opts = { args = {"abc", "efg"} }
+            local ok, err = checkups.ready_ok("single_host", cb_ok, opts)
+            if err then
+                ngx.say(err)
+            end
+        ';
+    }
+--- request
+GET /t
+--- response_body
+127.0.0.1:12350
+args:abc&efg

@@ -12,6 +12,7 @@ local floor      = math.floor
 local sqrt       = math.sqrt
 local tab_concat = table.concat
 local tab_insert = table.insert
+local unpack     = unpack
 
 local tcp       = ngx.socket.tcp
 local localtime = ngx.localtime
@@ -259,7 +260,7 @@ function _M.select_round_robin_server(ckey, cls, verify_server_status, bad_serve
 end
 
 
-local function try_server(skey, ups, srv, callback, try)
+local function try_server(skey, ups, srv, callback, args, try)
     try = try or 1
     local peer_key = _gen_key(skey, srv)
     local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX .. peer_key))
@@ -267,7 +268,7 @@ local function try_server(skey, ups, srv, callback, try)
 
     if peer_status == nil or peer_status.status ~= _M.STATUS_ERR then
         for i = 1, try, 1 do
-            res, err = callback(srv.host, srv.port)
+            res, err = callback(srv.host, srv.port, unpack(args))
             if check_res(res, ups) then
                 return res
             end
@@ -293,7 +294,7 @@ local function hash_value(data)
 end
 
 
-local function try_cluster_consistent_hash(skey, ups, cls, callback, hash_key)
+local function try_cluster_consistent_hash(skey, ups, cls, callback, args, hash_key)
     local server_len = #cls.servers
     if server_len == 0 then
         return nil, true, "no server available"
@@ -303,7 +304,7 @@ local function try_cluster_consistent_hash(skey, ups, cls, callback, hash_key)
     local p = floor((hash % 1024) / floor(1024 / server_len)) % server_len + 1
 
     -- try hashed node
-    local res, err = try_server(skey, ups, cls.servers[p], callback)
+    local res, err = try_server(skey, ups, cls.servers[p], callback, args)
     if res then
         return res
     end
@@ -313,7 +314,7 @@ local function try_cluster_consistent_hash(skey, ups, cls, callback, hash_key)
     local q = (p + hash % hash_backup_node + 1) % server_len + 1
     if p ~= q then
         local try = cls.try or #cls.servers
-        res, err = try_server(skey, ups, cls.servers[q], callback, try - 1)
+        res, err = try_server(skey, ups, cls.servers[q], callback, args, try - 1)
         if res then
             return res
         end
@@ -326,6 +327,7 @@ end
 
 local try_servers_round_robin = function(ckey, cls, verify_server_status, callback, opts)
     local try, check_res, check_opts, srv_flag = opts.try, opts.check_res, opts.check_opts, opts.srv_flag
+    local args = opts.args or {}
 
     if not check_res then
         check_res = function(res)
@@ -345,7 +347,7 @@ local try_servers_round_robin = function(ckey, cls, verify_server_status, callba
         else
             local res, _err
             if srv_flag then
-                res, _err = callback(srv.host, srv.port)
+                res, _err = callback(srv.host, srv.port, unpack(args))
             else
                 res, _err = callback(srv, ckey)
             end
@@ -377,7 +379,7 @@ local try_servers_round_robin = function(ckey, cls, verify_server_status, callba
 end
 
 
-local function try_cluster_round_robin(skey, ups, cls, callback, try_again)
+local function try_cluster_round_robin(skey, ups, cls, callback, args, try_again)
     local srvs_len = #cls.servers
 
     local try
@@ -396,7 +398,7 @@ local function try_cluster_round_robin(skey, ups, cls, callback, try_again)
         return
     end
 
-    local opts = { try = try, check_res = check_res, check_opts = ups, srv_flag = true }
+    local opts = { try = try, check_res = check_res, check_opts = ups, srv_flag = true, args = args }
     local res, try, err = try_servers_round_robin(nil, cls, verify_server_status, callback, opts)
     if res then
         return res
@@ -440,11 +442,12 @@ end
 
 local function try_cluster(skey, ups, cls, callback, opts, try_again)
     local mode = ups.mode
+    local args = opts.args or {}
     if mode == "hash" then
         local hash_key = opts.hash_key or ngx.var.uri
-        return try_cluster_consistent_hash(skey, ups, cls, callback, hash_key)
+        return try_cluster_consistent_hash(skey, ups, cls, callback, args, hash_key)
     else
-        return try_cluster_round_robin(skey, ups, cls, callback, try_again)
+        return try_cluster_round_robin(skey, ups, cls, callback, args, try_again)
     end
 end
 
