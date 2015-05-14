@@ -86,8 +86,8 @@ __DATA__
             end
 
             local st = checkups.get_status()
-            ngx.say(st["cls:api"][2][1].status)
-            ngx.say(st["cls:api"][2][1].msg)
+            ngx.say(st["cls:api"][1][1].status)
+            ngx.say(st["cls:api"][1][1].msg)
             ngx.say(st["cls:api"][2][2].status)
             ngx.say(st["cls:api"][2][2].msg)
         ';
@@ -95,10 +95,11 @@ __DATA__
 --- request
 GET /t
 --- response_body
-127.0.0.1:12361
-127.0.0.1:12361
-err
-down
+127.0.0.1:12354
+127.0.0.1:12354
 unstable
 down
+err
+down
 --- no_error_log
+--- timeout: 10

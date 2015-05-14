@@ -10,6 +10,7 @@ local lower      = string.lower
 local byte       = string.byte
 local floor      = math.floor
 local sqrt       = math.sqrt
+local tab_sort   = table.sort
 local tab_concat = table.concat
 local tab_insert = table.insert
 local unpack     = unpack
@@ -28,7 +29,7 @@ local WARN = ngx.WARN
 
 
 local _M = { _VERSION = "0.08",
-             STATUS_OK = 0, STATUS_ERR = 1, STATUS_UNSTABLE = 2 }
+             STATUS_OK = 0, STATUS_UNSTABLE = 1, STATUS_ERR = 2 }
 
 local CHECKUP_TIMER_KEY = "checkups:timer"
 local CHECKUP_LAST_CHECK_TIME_KEY = "checkups:last_check_time"
@@ -61,17 +62,22 @@ local function release_lock(lock)
 end
 
 
-local function update_peer_status(peer_key, status, msg, sensibility)
-    if not status then
-        return
-    end
-
+local function update_peer_status(srv, sensibility)
+    local peer_key = srv.peer_key
     local status_key = PEER_STATUS_PREFIX .. peer_key
+    local status_str, err = state:get(status_key)
 
-    local old_status, err = state:get(status_key)
     if err then
         log(ERR, "get old status ", status_key, " ", err)
         return
+    end
+
+    local old_status, err
+    if status_str then
+        old_status, err = cjson.decode(status_str)
+        if err then
+            log(WARN, "decode old status error: ", err)
+        end
     end
 
     if not old_status then
@@ -80,10 +86,9 @@ local function update_peer_status(peer_key, status, msg, sensibility)
             fail_num = 0,
             lastmodified = localtime(),
         }
-    else
-        old_status = cjson.decode(old_status)
     end
 
+    local status = srv.status
     if status == _M.STATUS_OK then
         if old_status.status ~= _M.STATUS_OK then
             old_status.lastmodified = localtime()
@@ -93,20 +98,31 @@ local function update_peer_status(peer_key, status, msg, sensibility)
     else  -- status == _M.STATUS_ERR or _M.STATUS_UNSTABLE
         old_status.fail_num = old_status.fail_num + 1
 
-        if old_status.status == _M.STATUS_OK and
+        if old_status.status ~= status and
             old_status.fail_num >= sensibility then
             old_status.status = status
             old_status.lastmodified = localtime()
         end
     end
 
-    for k, v in pairs(msg) do
+    for k, v in pairs(srv.statuses) do
         old_status[k] = v
     end
 
     local ok, err = state:set(status_key, cjson.encode(old_status))
     if not ok then
         log(ERR, "failed to set new status ", err)
+    end
+end
+
+
+local function update_upstream_status(ups_status, sensibility)
+    if not ups_status then
+        return
+    end
+
+    for _, srv in ipairs(ups_status) do
+        update_peer_status(srv, sensibility)
     end
 end
 
@@ -463,8 +479,8 @@ function _M.ready_ok(skey, callback, opts)
 
     -- try by key
     if opts.cluster_key then
-        for _, cls_key in ipairs({opts.cluster_key.default,
-            opts.cluster_key.backup}) do
+        for _, cls_key in ipairs({ opts.cluster_key.default,
+            opts.cluster_key.backup }) do
             local cls = ups.cluster[cls_key]
             if cls then
                 res, cont, err = try_cluster(skey, ups, cls, callback, opts, try_again)
@@ -536,16 +552,17 @@ local heartbeat = {
 
         red:set_timeout(ups.timeout * 1000)
 
+        local redis_err = { status = _M.STATUS_ERR, replication = cjson.null }
         local ok, err = red:connect(host, port)
         if not ok then
             log(ERR, "failed to connect redis: ", err)
-            return _M.STATUS_ERR, err
+            return redis_err, err
         end
 
         local res, err = red:ping()
         if not res then
             log(ERR, "failed to ping redis: ", err)
-            return _M.STATUS_ERR, err
+            return redis_err, err
         end
 
         local replication = {}
@@ -620,7 +637,7 @@ local heartbeat = {
         end
 
         if replication.master_link_status == "down" then
-            statuses.status = _M.STATUS_ERR
+            statuses.status = _M.STATUS_UNSTABLE
             statuses.msg = "master link status: down"
         end
 
@@ -729,18 +746,19 @@ local function cluster_heartbeat(skey)
 
     ups.timeout = ups.timeout or 60
 
-    local last = 0
+    local server_count = 0
     for level, cls in pairs(ups.cluster) do
         if cls.servers and #cls.servers > 0 then
-            last = last + #cls.servers
+            server_count = server_count + #cls.servers
         end
     end
 
-    local pos = 0
-    local no_available = true
+    local error_count = 0
+    local unstable_count = 0
+    local srv_available = false
+    local ups_status = {}
     for level, cls in pairs(ups.cluster) do
         for id, srv in ipairs(cls.servers) do
-            pos = pos + 1
             local peer_key = _gen_key(skey, srv)
             local cb_heartbeat = ups_heartbeat or heartbeat[ups_typ] or
                 heartbeat["general"]
@@ -755,18 +773,55 @@ local function cluster_heartbeat(skey)
                 statuses = {}
             end
 
-            statuses.msg = err or cjson.null
+            if not statuses.msg then
+                statuses.msg = err or cjson.null
+            end
+
+            local srv_status = {
+                peer_key = peer_key ,
+                status   = status   ,
+                statuses = statuses ,
+            }
 
             if status == _M.STATUS_OK then
-                no_available = false
+                update_peer_status(srv_status, ups_sensi)
+                srv_status.update = false
+                srv_available = true
             end
 
-            if ups_protected and pos == last and no_available then
-                update_peer_status(peer_key, _M.STATUS_UNSTABLE, statuses, ups_sensi)
-            else
-                update_peer_status(peer_key, status, statuses, ups_sensi)
+            if status == _M.STATUS_ERR then
+                error_count = error_count + 1
+                if srv_available then
+                    update_peer_status(srv_status, ups_sensi)
+                    srv_status.update = false
+                end
+            end
+
+            if status == _M.STATUS_UNSTABLE then
+                unstable_count = unstable_count + 1
+                if srv_available then
+                    srv_status.status = _M.STATUS_ERR
+                    update_peer_status(srv_status, ups_sensi)
+                    srv_status.update = false
+                end
+            end
+
+            if srv_status.update ~= false then
+                tab_insert(ups_status, srv_status)
             end
         end
+    end
+
+    if next(ups_status) then
+        if error_count == server_count then
+            if ups_protected then
+                ups_status[1].status = _M.STATUS_UNSTABLE
+            end
+        elseif error_count + unstable_count == server_count then
+            tab_sort(ups_status, function(a, b) return a.status < b.status end)
+        end
+
+        update_upstream_status(ups_status, ups_sensi)
     end
 end
 
@@ -1053,6 +1108,7 @@ function _M.create_checker()
     local ok, err = ngx.timer.at(0, active_checkup)
     if not ok then
         log(WARN, "failed to create timer: ", err)
+        release_lock(lock)
         return
     end
 
@@ -1060,6 +1116,7 @@ function _M.create_checker()
         local ok, err = ngx.timer.at(0, ups_status_checker)
         if not ok then
             log(WARN, "failed to create ups_status_checker: ", err)
+            release_lock(lock)
             return
         end
         ups_status_timer_created = true
@@ -1068,9 +1125,7 @@ function _M.create_checker()
     local overtime = upstream.checkup_timer_overtime
     local ok, err = mutex:set(ckey, 1, overtime)
     if not ok then
-        release_lock(lock)
         log(WARN, "failed to update shm: ", err)
-        return
     end
 
     release_lock(lock)
