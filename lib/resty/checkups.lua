@@ -787,6 +787,15 @@ local function cluster_heartbeat(skey)
                 update_peer_status(srv_status, ups_sensi)
                 srv_status.updated = true
                 srv_available = true
+                if next(ups_status) then
+                    for _, v in ipairs(ups_status) do
+                        if v.status == _M.STATUS_UNSTABLE then
+                            v.status = _M.STATUS_ERR
+                        end
+                        update_peer_status(v, ups_sensi)
+                    end
+                    ups_status = {}
+                end
             end
 
             if status == _M.STATUS_ERR then
@@ -819,12 +828,6 @@ local function cluster_heartbeat(skey)
             end
         elseif error_count + unstable_count == server_count then
             tab_sort(ups_status, function(a, b) return a.status < b.status end)
-        else
-            for _, v in ipairs(ups_status) do
-                if v.status == _M.STATUS_UNSTABLE then
-                    v.status = _M.STATUS_ERR
-                end
-            end
         end
 
         update_upstream_status(ups_status, ups_sensi)
