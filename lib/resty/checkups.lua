@@ -27,6 +27,21 @@ local log       = ngx.log
 local ERR  = ngx.ERR
 local WARN = ngx.WARN
 
+local ok, resty_redis = pcall(require, "resty.redis")
+if not ok then
+    error("lua-resty-redis module required")
+end
+
+local ok, resty_mysql = pcall(require, "resty.mysql")
+if not ok then
+    error("lua-resty-mysql module required")
+end
+
+local ok, ngx_upstream = pcall(require, "ngx.upstream")
+if not ok then
+    error("ngx_upstream_lua module required")
+end
+
 
 local _M = { _VERSION = "0.09",
              STATUS_OK = 0, STATUS_UNSTABLE = 1, STATUS_ERR = 2 }
@@ -528,11 +543,13 @@ end
 
 local heartbeat = {
     general = function (host, port, ups)
+        local id = host .. ':' .. port
+
         local sock = tcp()
         sock:settimeout(ups.timeout * 1000)
         local ok, err = sock:connect(host, port)
         if not ok then
-            log(ERR, "failed to connect: ", host, ":", port, " ", err)
+            log(ERR, "failed to connect: ", id, ", ", err)
             return _M.STATUS_ERR, err
         end
 
@@ -542,26 +559,26 @@ local heartbeat = {
     end,
 
     redis = function (host, port, ups)
-        local ok, redis = pcall(require, "resty.redis")
-        if not ok then
-            log(ERR, "failed to require redis")
-            return _M.STATUS_ERR, "failed to require redis"
-        end
+        local id = host .. ':' .. port
 
-        local red = redis:new()
+        local red, err = resty_redis:new()
+        if not red then
+            log(WARN, "failed to new redis: ", err)
+            return _M.STATUS_ERR, err
+        end
 
         red:set_timeout(ups.timeout * 1000)
 
         local redis_err = { status = _M.STATUS_ERR, replication = cjson.null }
         local ok, err = red:connect(host, port)
         if not ok then
-            log(ERR, "failed to connect redis: ", err)
+            log(ERR, "failed to connect redis: ", id, ", ", err)
             return redis_err, err
         end
 
         local res, err = red:ping()
         if not res then
-            log(ERR, "failed to ping redis: ", err)
+            log(ERR, "failed to ping redis: ", id, ", ", err)
             return redis_err, err
         end
 
@@ -645,15 +662,11 @@ local heartbeat = {
     end,
 
     mysql = function (host, port, ups)
-        local ok, mysql = pcall(require, "resty.mysql")
-        if not ok then
-            log(ERR, "failed to require mysql")
-            return _M.STATUS_ERR, "failed to require mysql"
-        end
+        local id = host .. ':' .. port
 
-        local db, err = mysql:new()
+        local db, err = resty_mysql:new()
         if not db then
-            log(WARN, "failed to instantiate mysql: ", err)
+            log(WARN, "failed to new mysql: ", err)
             return _M.STATUS_ERR, err
         end
 
@@ -669,7 +682,7 @@ local heartbeat = {
         }
 
         if not ok then
-            log(ERR, "faild to connect: ", err, ": ", errno, " ", sqlstate)
+            log(ERR, "failed to connect: ", id, ", ", err, ": ", errno, " ", sqlstate)
             return _M.STATUS_ERR, err
         end
 
@@ -679,11 +692,18 @@ local heartbeat = {
     end,
 
     http = function(host, port, ups)
-        local sock = tcp()
+        local id = host .. ':' .. port
+
+        local sock, err = tcp()
+        if not sock then
+            log(WARN, "failed to create sock: ", err)
+            return _M.STATUS_ERR, err
+        end
+
         sock:settimeout(ups.timeout * 1000)
         local ok, err = sock:connect(host, port)
         if not ok then
-            log(ERR, "failed to connect: ", host, ":", port, " ", err)
+            log(ERR, "failed to connect: ", id, ", ", err)
             return _M.STATUS_ERR, err
         end
 
@@ -697,14 +717,14 @@ local heartbeat = {
 
         local bytes, err = sock:send(req)
         if not bytes then
-            log(ERR, "failed to send request to ", host, ":", port, ": ", err)
+            log(ERR, "failed to send request to: ", id, ", ", err)
             return _M.STATUS_ERR, err
         end
 
         local readline = sock:receiveuntil("\r\n")
         local status_line, err = readline()
         if not status_line then
-            log(ERR, "failed to receive status line from ", host, ":", port, ": ", err)
+            log(ERR, "failed to receive status line from: ", id, ", ", err)
             return _M.STATUS_ERR, err
         end
 
@@ -713,7 +733,7 @@ local heartbeat = {
             local from, to, err = re_find(status_line,
                 [[^HTTP/\d+\.\d+\s+(\d+)]], "joi", nil, 1)
             if not from then
-                log(ERR, "bad status line from ", host, ": ", err)
+                log(ERR, "bad status line from: ", id, ", ", err)
                 return _M.STATUS_ERR, err
             end
 
@@ -758,7 +778,7 @@ local function cluster_heartbeat(skey)
     local srv_available = false
     local ups_status = {}
     for level, cls in pairs(ups.cluster) do
-        for id, srv in ipairs(cls.servers) do
+        for _, srv in ipairs(cls.servers) do
             local peer_key = _gen_key(skey, srv)
             local cb_heartbeat = ups_heartbeat or heartbeat[ups_typ] or
                 heartbeat["general"]
@@ -880,22 +900,16 @@ local function ups_status_checker(premature)
         return
     end
 
-    local ok, up = pcall(require, "ngx.upstream")
-    if not ok then
-        log(ERR, "ngx_upstream_lua module required")
-        return
-    end
-
     local ups_status = {}
-    local names = up.get_upstreams()
+    local names = ngx_upstream.get_upstreams()
     -- get current upstream down status
     for _, name in ipairs(names) do
-        local srvs = up.get_primary_peers(name)
+        local srvs = ngx_upstream.get_primary_peers(name)
         for _, srv in ipairs(srvs) do
             ups_status[srv.name] = srv.down and _M.STATUS_ERR or _M.STATUS_OK
         end
 
-        srvs = up.get_backup_peers(name)
+        srvs = ngx_upstream.get_backup_peers(name)
         for _, srv in ipairs(srvs) do
             ups_status[srv.name] = srv.down and _M.STATUS_ERR or _M.STATUS_OK
         end
@@ -919,8 +933,8 @@ local function ups_status_checker(premature)
                     if (unstable and up_st == _M.STATUS_ERR) or
                         (not unstable and up_st and st.status ~= up_st) then
                         local up_id = peer_id_dict[peer_key]
-                        local down = up_st == _M.STATUS_OK and true or false
-                        local ok, err = up.set_peer_down(
+                        local down = up_st == _M.STATUS_OK
+                        local ok, err = ngx_upstream.set_peer_down(
                             cls.upstream, up_id.backup, up_id.id, down)
                         if not ok then
                             log(ERR, "failed to set peer down", err)
@@ -966,16 +980,10 @@ local function extract_servers_from_upstream(skey, cls)
 
     cls.servers = cls.servers or {}
 
-    local ok, up = pcall(require, "ngx.upstream")
-    if not ok then
-        log(ERR, "ngx_upstream_lua module required")
-        return
-    end
-
     local ups_backup = cls.upstream_only_backup
-    local srvs_getter = up.get_primary_peers
+    local srvs_getter = ngx_upstream.get_primary_peers
     if ups_backup then
-        srvs_getter = up.get_backup_peers
+        srvs_getter = ngx_upstream.get_backup_peers
     end
     local srvs, err = srvs_getter(up_key)
     if not srvs and err then
@@ -1032,7 +1040,7 @@ local function get_upstream_status(skey)
         local servers = cls.servers
         ups_status[level] = {}
         if servers and type(servers) == "table" and #servers > 0 then
-            for id, srv in ipairs(servers) do
+            for _, srv in ipairs(servers) do
                 local peer_key = _gen_key(skey, srv)
                 local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX ..
                                                            peer_key)) or {}
