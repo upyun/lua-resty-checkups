@@ -445,14 +445,12 @@ end
 
 
 function _M.try_cluster_round_robin(clusters, verify_server_status, callback, opts)
-    local try, cluster_key = opts.try, opts.cluster_key
-    local break_flag = false
+    local cluster_key = opts.cluster_key
 
     local err
     for _, ckey in ipairs(cluster_key) do
         local cls = clusters[ckey]
         if type(cls) == "table" and type(cls.servers) == "table" and next(cls.servers) then
-            local opts = { try = try }
             local res, _try, _err = try_servers_round_robin(ckey, cls, verify_server_status, callback, opts)
             if res then
                 return res
@@ -462,7 +460,7 @@ function _M.try_cluster_round_robin(clusters, verify_server_status, callback, op
                 return nil, _err
             end
 
-            try = _try
+            opts.try = _try
             err = _err
         end
     end

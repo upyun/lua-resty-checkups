@@ -120,8 +120,9 @@ end
 
 del_cdn_data("bucket")
 ngx.ctx.cdn_data = get_cdn_data("bucket")
-local opts = { try = 20, cluster_key = {"ctn", "cun", "cmn"} }
+local opts = { cluster_key = {"ctn", "cun", "cmn"} }
 for i = 1, 5, 1 do
+    opts.try = 20
     local res, err = checkups.try_cluster_round_robin(ngx.ctx.cdn_data, verify_server_status, callback, opts)
     set_cdn_data("bucket")
     if err then
@@ -136,6 +137,7 @@ ngx.sleep(10)
 del_cdn_data("bucket")
 ngx.ctx.cdn_data = get_cdn_data("bucket")
 for i = 1, 5, 1 do
+    opts.try = 20
     local res, err = checkups.try_cluster_round_robin(ngx.ctx.cdn_data, verify_server_status, callback, opts)
     set_cdn_data("bucket")
     if err then
@@ -167,6 +169,7 @@ end
 del_cdn_data("bucket")
 ngx.ctx.cdn_data = get_cdn_data("bucket")
 for i = 1, 5, 1 do
+    opts.try = 20
     ngx.print(' ')
     local res, err
     if i < 3 then
@@ -185,10 +188,10 @@ ngx.say('')
 ngx.say('')
 
 
-opts.try = 2
 del_cdn_data("bucket")
 ngx.ctx.cdn_data = get_cdn_data("bucket")
 for i = 1, 5, 1 do
+    opts.try = 2
     local res, err = checkups.try_cluster_round_robin(ngx.ctx.cdn_data, verify_server_status, callback, opts)
     set_cdn_data("bucket")
     if err then
@@ -231,8 +234,9 @@ end
 
 del_cdn_data("bucket")
 ngx.ctx.cdn_data = get_cdn_data("bucket")
-local opts = { try = 5, cluster_key = {"ctn", "cun", "cmn"} }
+local opts = { cluster_key = {"ctn", "cun", "cmn"} }
 for i = 1, 20, 1 do
+    opts.try = 5
     local res, err = checkups.try_cluster_round_robin(ngx.ctx.cdn_data, verify_server_status, callback, opts)
     set_cdn_data("bucket")
     if res then
