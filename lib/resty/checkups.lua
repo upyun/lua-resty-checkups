@@ -30,7 +30,7 @@ local WARN = ngx.WARN
 local resty_redis, resty_mysql, ngx_upstream
 
 
-local _M = { _VERSION = "0.09",
+local _M = { _VERSION = "0.10",
              STATUS_OK = 0, STATUS_UNSTABLE = 1, STATUS_ERR = 2 }
 
 local CHECKUP_TIMER_KEY = "checkups:timer"
