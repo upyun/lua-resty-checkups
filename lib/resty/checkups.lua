@@ -27,20 +27,7 @@ local log       = ngx.log
 local ERR  = ngx.ERR
 local WARN = ngx.WARN
 
-local ok, resty_redis = pcall(require, "resty.redis")
-if not ok then
-    error("lua-resty-redis module required")
-end
-
-local ok, resty_mysql = pcall(require, "resty.mysql")
-if not ok then
-    error("lua-resty-mysql module required")
-end
-
-local ok, ngx_upstream = pcall(require, "ngx.upstream")
-if not ok then
-    error("ngx_upstream_lua module required")
-end
+local resty_redis, resty_mysql, ngx_upstream
 
 
 local _M = { _VERSION = "0.09",
@@ -559,6 +546,15 @@ local heartbeat = {
     redis = function (host, port, ups)
         local id = host .. ':' .. port
 
+        if not resty_redis then
+            local ok
+            ok, resty_redis = pcall(require, "resty.redis")
+            if not ok then
+                log(ERR, "failed to require resty.redis")
+                return _M.STATUS_ERR, "failed to require resty.redis"
+            end
+        end
+
         local red, err = resty_redis:new()
         if not red then
             log(WARN, "failed to new redis: ", err)
@@ -661,6 +657,15 @@ local heartbeat = {
 
     mysql = function (host, port, ups)
         local id = host .. ':' .. port
+
+        if not resty_mysql then
+            local ok
+            ok, resty_mysql = pcall(require, "resty.mysql")
+            if not ok then
+                log(ERR, "failed to require resty.mysql")
+                return _M.STATUS_ERR, "failed to require resty.mysql"
+            end
+        end
 
         local db, err = resty_mysql:new()
         if not db then
@@ -898,6 +903,15 @@ local function ups_status_checker(premature)
         return
     end
 
+    if not ngx_upstream then
+        local ok
+        ok, ngx_upstream = pcall(require, "ngx.upstream")
+        if not ok then
+            log(ERR, "ngx_upstream_lua module required")
+            return
+        end
+    end
+
     local ups_status = {}
     local names = ngx_upstream.get_upstreams()
     -- get current upstream down status
@@ -977,6 +991,15 @@ local function extract_servers_from_upstream(skey, cls)
     end
 
     cls.servers = cls.servers or {}
+
+    if not ngx_upstream then
+        local ok
+        ok, ngx_upstream = pcall(require, "ngx.upstream")
+        if not ok then
+            log(ERR, "ngx_upstream_lua module required")
+            return
+        end
+    end
 
     local ups_backup = cls.upstream_only_backup
     local srvs_getter = ngx_upstream.get_primary_peers
