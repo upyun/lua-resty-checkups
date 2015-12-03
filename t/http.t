@@ -97,11 +97,11 @@ GET /t
 --- response_body
 127.0.0.1:12354
 127.0.0.1:12356
---- grep_error_log eval: qr/failed to connect: 127.0.0.1:\d+ connection refused|failed to receive status line from 127.0.0.1:\d+: timeout/
+--- grep_error_log eval: qr/failed to connect: 127.0.0.1:\d+, connection refused|failed to receive status line from: 127.0.0.1:\d+, timeout/
 --- grep_error_log_out
-failed to receive status line from 127.0.0.1:12357: timeout
-failed to connect: 127.0.0.1:12360 connection refused
-failed to connect: 127.0.0.1:12361 connection refused
+failed to receive status line from: 127.0.0.1:12357, timeout
+failed to connect: 127.0.0.1:12360, connection refused
+failed to connect: 127.0.0.1:12361, connection refused
 --- timeout: 10
 
 
@@ -127,9 +127,9 @@ GET /t
 --- response_body
 127.0.0.1:12354
 127.0.0.1:12356
---- grep_error_log eval: qr/failed to connect: 127.0.0.1:\d+ connection refused|failed to receive status line from 127.0.0.1:\d+: timeout/
+--- grep_error_log eval: qr/failed to connect: 127.0.0.1:\d+, connection refused|failed to receive status line from: 127.0.0.1:\d+, timeout/
 --- grep_error_log_out
-failed to receive status line from 127.0.0.1:12357: timeout
-failed to connect: 127.0.0.1:12360 connection refused
-failed to connect: 127.0.0.1:12361 connection refused
+failed to receive status line from: 127.0.0.1:12357, timeout
+failed to connect: 127.0.0.1:12360, connection refused
+failed to connect: 127.0.0.1:12361, connection refused
 --- timeout: 10

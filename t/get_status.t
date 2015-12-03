@@ -89,10 +89,10 @@ ok
 err
 connection refused
 nil
---- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+ connection refused/
+--- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+, connection refused/
 --- grep_error_log_out
-cb_heartbeat(): failed to connect: 127.0.0.1:12356 connection refused
-cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
+cb_heartbeat(): failed to connect: 127.0.0.1:12356, connection refused
+cb_heartbeat(): failed to connect: 127.0.0.1:12361, connection refused
 
 
 === TEST 2: get status with passive
@@ -137,10 +137,10 @@ connection refused
 127.0.0.1:12355 ERR
 ok
 null
---- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+ connection refused/
+--- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+, connection refused/
 --- grep_error_log_out
-cb_heartbeat(): failed to connect: 127.0.0.1:12356 connection refused
-cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
+cb_heartbeat(): failed to connect: 127.0.0.1:12356, connection refused
+cb_heartbeat(): failed to connect: 127.0.0.1:12361, connection refused
 
 
 === TEST 3: clear fail counter
@@ -177,10 +177,10 @@ ok
 null
 ok
 null
---- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+ connection refused/
+--- grep_error_log eval: qr/cb_heartbeat\(\): failed to connect: 127.0.0.1:\d+, connection refused/
 --- grep_error_log_out
-cb_heartbeat(): failed to connect: 127.0.0.1:12356 connection refused
-cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
-cb_heartbeat(): failed to connect: 127.0.0.1:12356 connection refused
-cb_heartbeat(): failed to connect: 127.0.0.1:12361 connection refused
+cb_heartbeat(): failed to connect: 127.0.0.1:12356, connection refused
+cb_heartbeat(): failed to connect: 127.0.0.1:12361, connection refused
+cb_heartbeat(): failed to connect: 127.0.0.1:12356, connection refused
+cb_heartbeat(): failed to connect: 127.0.0.1:12361, connection refused
 --- timeout: 10
