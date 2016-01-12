@@ -1,0 +1,5 @@
+image: repo.upyun.com:5043/ci-shared-runner
+
+test:
+    script:
+        - make test
