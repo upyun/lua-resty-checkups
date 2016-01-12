@@ -13,8 +13,10 @@ local sqrt       = math.sqrt
 local tab_sort   = table.sort
 local tab_concat = table.concat
 local tab_insert = table.insert
+local tab_remove = table.remove
 local unpack     = unpack
 
+local worker_id = ngx.worker.id
 local tcp       = ngx.socket.tcp
 local localtime = ngx.localtime
 local re_find   = ngx.re.find
@@ -22,20 +24,23 @@ local re_match  = ngx.re.match
 local re_gmatch = ngx.re.gmatch
 local mutex     = ngx.shared.mutex
 local state     = ngx.shared.state
+local shd_config= ngx.shared.config
 local log       = ngx.log
 
 local ERR  = ngx.ERR
 local WARN = ngx.WARN
+local DEBUG = ngx.DEBUG
 
 local resty_redis, resty_mysql, ngx_upstream
 
 
-local _M = { _VERSION = "0.10",
+local _M = { _VERSION = "0.11",
              STATUS_OK = 0, STATUS_UNSTABLE = 1, STATUS_ERR = 2 }
 
 local CHECKUP_TIMER_KEY = "checkups:timer"
 local CHECKUP_LAST_CHECK_TIME_KEY = "checkups:last_check_time"
 local CHECKUP_TIMER_ALIVE_KEY = "checkups:timer_alive"
+local SHD_CONFIG_VERSTION_KEY = "config_version"
 
 local PEER_STATUS_PREFIX = "checkups:peer_status:"
 
@@ -61,6 +66,39 @@ local function release_lock(lock)
     if not ok then
         log(WARN, "failed to unlock: ", err)
     end
+end
+
+
+local function table_dup(ori_tab)
+    if type(ori_tab) ~= "table" then
+        return ori_tab
+    end
+    local new_tab = {}
+    for k, v in pairs(ori_tab) do
+        if type(v) == "table" then
+            new_tab[k] = table_dup(v)
+        else
+            new_tab[k] = v
+        end
+    end
+    return new_tab
+end
+
+
+local function cluster_eq(c1, c2)
+    if #c1 ~= #c2 then return false end
+    for i=1, #c1 do
+        local s1 = c1[i]
+        local s2 = c2[i]
+        if type(s1) ~= type(s2) then return false end
+        if type(s1) == "string" and s1 ~= s2 then
+            return false
+        elseif type(s1) == "table" and
+            (s1.host ~= s2.host or s1.port ~= s2.port) then
+            return false
+        end
+    end
+    return true
 end
 
 
@@ -160,6 +198,11 @@ end
 
 local function _gen_key(skey, srv)
     return str_format("%s:%s:%d", skey, srv.host, srv.port)
+end
+
+
+local function _gen_shd_key(skey, level)
+    return str_format("%s:%s:%d", upstream.shd_config_prefix, skey, level)
 end
 
 
@@ -487,7 +530,6 @@ function _M.ready_ok(skey, callback, opts)
                 if res then
                     return res, err
                 end
-
 
                 -- continue to next key?
                 if not cont then break end
@@ -898,6 +940,64 @@ local function active_checkup(premature)
 end
 
 
+local function shd_config_syncer(premature)
+    local ckey = CHECKUP_TIMER_KEY .. ":shd_config:" .. worker_id()
+    ngx.update_time()
+
+    if premature then
+        local ok, err = mutex:set(ckey, nil)
+        if not ok then
+            log(WARN, "failed to update shm: ", err)
+        end
+        return
+    end
+
+    local config_version, err = shd_config:get(SHD_CONFIG_VERSTION_KEY)
+
+    if config_version and config_version > upstream.shd_config_version then
+        local success = true
+        for skey, ups in pairs(upstream.checkups) do
+            for level, cls in pairs(ups.cluster) do
+                local shd_servers, err = shd_config:get(_gen_shd_key(skey, level))
+                if shd_servers then
+                    shd_servers = cjson.decode(shd_servers)
+                    if shd_servers and #shd_servers > 0
+                        and not cluster_eq(shd_servers, cls.servers) then
+                        cls.servers = table_dup(shd_servers)
+                        _M.reset_round_robin_state(cls)
+                    end
+                elseif err then
+                    success = false
+                    log(WARN, "failed to get from shm: ", err)
+                end
+            end
+        end
+        if success then
+            upstream.shd_config_version = config_version
+        end
+    elseif err then
+        log(WARN, "failed to get config version from shm")
+    end
+
+    local interval = upstream.checkup_timer_interval
+    local overtime = upstream.checkup_timer_overtime
+    local ok, err = mutex:set(ckey, 1, overtime)
+    if not ok then
+        log(WARN, "failed to update shm: ", err)
+    end
+
+    local ok, err = ngx.timer.at(interval, shd_config_syncer)
+    if not ok then
+        log(WARN, "failed to create timer: ", err)
+        local ok, err = mutex:set(ckey, nil)
+        if not ok then
+            log(WARN, "failed to update shm: ", err)
+        end
+        return
+    end
+end
+
+
 local function ups_status_checker(premature)
     if premature then
         return
@@ -968,22 +1068,6 @@ local function ups_status_checker(premature)
 end
 
 
-local function table_dup(ori_tab)
-    if type(ori_tab) ~= "table" then
-        return ori_tab
-    end
-    local new_tab = {}
-    for k, v in pairs(ori_tab) do
-        if type(v) == "table" then
-            new_tab[k] = table_dup(v)
-        else
-            new_tab[k] = v
-        end
-    end
-    return new_tab
-end
-
-
 local function extract_servers_from_upstream(skey, cls)
     local up_key = cls.upstream
     if not up_key then
@@ -1034,15 +1118,42 @@ function _M.prepare_checker(config)
     upstream.ups_status_sync_enable = config.global.ups_status_sync_enable
     upstream.ups_status_timer_interval = config.global.ups_status_timer_interval
         or 5
+    upstream.checkup_shd_sync_enable = config.global.checkup_shd_sync_enable
+    upstream.shd_config_prefix = config.global.shd_config_prefix or "shd"
 
     for skey, ups in pairs(config) do
         if type(ups) == "table" and type(ups.cluster) == "table" then
             upstream.checkups[skey] = table_dup(ups)
             for level, cls in pairs(upstream.checkups[skey].cluster) do
                 extract_servers_from_upstream(skey, cls)
+
+                if upstream.checkup_shd_sync_enable then
+                    if shd_config and worker_id then
+                        local key = _gen_shd_key(skey, level)
+                        local old_cfg, err = shd_config:get(key)
+                        if not old_cfg and not err then
+                            shd_config:set(key, cjson.encode(cls.servers))
+                        else
+                            log(ERR, "failed to set config to shm, ", err)
+                        end
+                    else
+                        log(ERR, "checkup_shd_sync_enable is true but " ..
+                            "no shd_config nor worker_id found.")
+                    end
+                end
+
                 _M.reset_round_robin_state(cls)
             end
         end
+    end
+
+    if upstream.checkup_shd_sync_enable and
+        shd_config and worker_id then
+        local shd_config_version, err = shd_config:get(SHD_CONFIG_VERSTION_KEY)
+        if not shd_config_version and not err then
+            shd_config:set(SHD_CONFIG_VERSTION_KEY, 0)
+        end
+        upstream.shd_config_version = 0
     end
 
     upstream.initialized = true
@@ -1093,8 +1204,119 @@ function _M.get_status()
     all_status.checkup_timer_alive = state:get(CHECKUP_TIMER_ALIVE_KEY) or false
     all_status.start_time = upstream.start_time
     all_status.conf_hash = upstream.conf_hash or cjson.null
+    all_status.shd_config_version = upstream.shd_config_version or cjson.null
 
     return all_status
+end
+
+
+local function check_update_server_args(skey, level, server)
+    if type(skey) ~= "string" then
+        return false, "skey must be a string"
+    end
+    if not upstream.checkups[skey] then
+        return false, skey .. " not exists"
+    end
+    if type(level) ~= "number" and type(level) ~= "string" then
+        return false, "level must be string or number"
+    end
+    if type(server) ~= "table" then
+        return false, "server must be a table"
+    end
+    if not server.host or not server.port then
+        return false, "no server.host nor server.port found"
+    end
+
+    return true
+end
+
+
+function _M.add_server(skey, level, server)
+    local ok, err = check_update_server_args(skey, level, server)
+    if not ok then
+        return false, err
+    end
+
+    local key = _gen_shd_key(skey, level)
+    local shd_servers, err = shd_config:get(key)
+    if shd_servers then
+        shd_servers = cjson.decode(shd_servers)
+        if shd_servers then
+            local exists = false
+            for idx, srv in pairs(shd_servers) do
+                if srv.host == server.host and srv.port == server.port then
+                    exists = true
+                    break
+                end
+            end
+            if not exists then
+                tab_insert(shd_servers, server)
+                local new_ver, ok, err
+                ok, err = shd_config:set(key, cjson.encode(shd_servers))
+                if err then
+                    log(WARN, "failed to set new servers to shm")
+                    return false, err
+                end
+
+                new_ver, err = shd_config:incr(SHD_CONFIG_VERSTION_KEY, 1)
+                if err then
+                    log(WARN, "failed to set new version to shm")
+                    return false, err
+                end
+            else
+                return false, "server already exists"
+            end
+        end
+    elseif err then
+        return false, err
+    end
+
+    return true
+end
+
+
+function _M.delete_server(skey, level, server)
+    local ok, err = check_update_server_args(skey, level, server)
+    if not ok then
+        return false, err
+    end
+
+    local key = _gen_shd_key(skey, level)
+    local shd_servers, err = shd_config:get(key)
+    if shd_servers then
+        shd_servers = cjson.decode(shd_servers)
+        if shd_servers then
+            if #shd_servers <= 1 then
+                return false, "can not delete the last server"
+            end
+            local deleted = false
+            for idx, srv in pairs(shd_servers) do
+                if srv.host == server.host and srv.port == server.port then
+                    tab_remove(shd_servers, idx)
+                    deleted = true
+                    break
+                end
+            end
+            if deleted then
+                local new_ver, ok, err
+                ok, err = shd_config:set(key, cjson.encode(shd_servers))
+                if err then
+                    log(WARN, "failed to set new servers to shm")
+                    return false, err
+                end
+
+                new_ver, err = shd_config:incr(SHD_CONFIG_VERSTION_KEY, 1)
+                if err then
+                    log(WARN, "failed to set new version to shm")
+                    return false, err
+                end
+            end
+        end
+    elseif err then
+        return false, err
+    end
+
+    return true
 end
 
 
@@ -1113,8 +1335,8 @@ function _M.get_ups_timeout(skey)
 end
 
 
-function _M.create_checker()
-    local ckey = CHECKUP_TIMER_KEY
+local function create_shd_config_syncer()
+    local ckey = CHECKUP_TIMER_KEY .. ":shd_config:" .. worker_id()
     local val, err = mutex:get(ckey)
     if val then
         return
@@ -1125,8 +1347,39 @@ function _M.create_checker()
         return
     end
 
+    local ok, err = ngx.timer.at(0, shd_config_syncer)
+    if not ok then
+        log(WARN, "failed to create shd_config timer: ", err)
+        return
+    end
+
+    local overtime = upstream.checkup_timer_overtime
+    local ok, err = mutex:set(ckey, 1, overtime)
+    if not ok then
+        log(WARN, "failed to update shm: ", err)
+    end
+end
+
+
+function _M.create_checker()
     if not upstream.initialized then
         log(ERR, "create checker failed, call prepare_checker in init_by_lua")
+        return
+    end
+
+    -- shd config syncer enabled
+    if upstream.shd_config_version then
+        create_shd_config_syncer()
+    end
+
+    local ckey = CHECKUP_TIMER_KEY
+    local val, err = mutex:get(ckey)
+    if val then
+        return
+    end
+
+    if err then
+        log(WARN, "failed to get key from shm: ", err)
         return
     end
 
