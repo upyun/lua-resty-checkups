@@ -16,6 +16,7 @@ local tab_insert = table.insert
 local tab_remove = table.remove
 local unpack     = unpack
 
+local get_phase = ngx.get_phase
 local worker_id = ngx.worker.id
 local tcp       = ngx.socket.tcp
 local localtime = ngx.localtime
@@ -94,7 +95,7 @@ local function cluster_eq(c1, c2)
         if type(s1) == "string" and s1 ~= s2 then
             return false
         elseif type(s1) == "table" and
-            (s1.host ~= s2.host or s1.port ~= s2.port) then
+            (s1.host ~= s2.host or tonumber(s1.port) ~= tonumber(s2.port)) then
             return false
         end
     end
@@ -959,6 +960,10 @@ local function shd_config_syncer(premature)
         for skey, ups in pairs(upstream.checkups) do
             for level, cls in pairs(ups.cluster) do
                 local shd_servers, err = shd_config:get(_gen_shd_key(skey, level))
+
+                --log(DEBUG, skey, ":", level, ", worker: ", cjson.encode(cls.servers),
+                --    ", shm: ", cjson.encode(shd_servers))
+
                 if shd_servers then
                     shd_servers = cjson.decode(shd_servers)
                     if shd_servers and #shd_servers > 0
@@ -979,7 +984,7 @@ local function shd_config_syncer(premature)
         log(WARN, "failed to get config version from shm")
     end
 
-    local interval = upstream.checkup_timer_interval
+    local interval = upstream.shd_config_timer_interval
     local overtime = upstream.checkup_timer_overtime
     local ok, err = mutex:set(ckey, 1, overtime)
     if not ok then
@@ -1120,6 +1125,8 @@ function _M.prepare_checker(config)
         or 5
     upstream.checkup_shd_sync_enable = config.global.checkup_shd_sync_enable
     upstream.shd_config_prefix = config.global.shd_config_prefix or "shd"
+    upstream.shd_config_timer_interval = config.global.shd_config_timer_interval
+        or upstream.checkup_timer_interval
 
     for skey, ups in pairs(config) do
         if type(ups) == "table" and type(ups.cluster) == "table" then
@@ -1129,12 +1136,17 @@ function _M.prepare_checker(config)
 
                 if upstream.checkup_shd_sync_enable then
                     if shd_config and worker_id then
-                        local key = _gen_shd_key(skey, level)
-                        local old_cfg, err = shd_config:get(key)
-                        if not old_cfg and not err then
-                            shd_config:set(key, cjson.encode(cls.servers))
-                        else
-                            log(ERR, "failed to set config to shm, ", err)
+                        local phase = get_phase()
+                        -- if in init_worker phase, only worker 0 can update shm
+                        if phase == "init" or
+                            phase == "init_worker" and worker_id() == 0 then
+                            local key = _gen_shd_key(skey, level)
+                            local old_cfg, err = shd_config:get(key)
+                            if not old_cfg and not err then
+                                shd_config:set(key, cjson.encode(cls.servers))
+                            else
+                                log(ERR, "failed to set config to shm, ", err)
+                            end
                         end
                     else
                         log(ERR, "checkup_shd_sync_enable is true but " ..
@@ -1149,9 +1161,13 @@ function _M.prepare_checker(config)
 
     if upstream.checkup_shd_sync_enable and
         shd_config and worker_id then
-        local shd_config_version, err = shd_config:get(SHD_CONFIG_VERSTION_KEY)
-        if not shd_config_version and not err then
-            shd_config:set(SHD_CONFIG_VERSTION_KEY, 0)
+        local phase = get_phase()
+        -- if in init_worker phase, only worker 0 can update shm
+        if phase == "init" or phase == "init_worker" and worker_id() == 0 then
+            local shd_config_version, err = shd_config:get(SHD_CONFIG_VERSTION_KEY)
+            if not shd_config_version and not err then
+                shd_config:set(SHD_CONFIG_VERSTION_KEY, 0)
+            end
         end
         upstream.shd_config_version = 0
     end
@@ -1244,7 +1260,8 @@ function _M.add_server(skey, level, server)
         if shd_servers then
             local exists = false
             for idx, srv in pairs(shd_servers) do
-                if srv.host == server.host and srv.port == server.port then
+                if srv.host == server.host and
+                    tonumber(srv.port) == tonumber(server.port) then
                     exists = true
                     break
                 end
@@ -1269,6 +1286,8 @@ function _M.add_server(skey, level, server)
         end
     elseif err then
         return false, err
+    else
+        return false, "cluster " .. key .. " not found"
     end
 
     return true
@@ -1291,7 +1310,8 @@ function _M.delete_server(skey, level, server)
             end
             local deleted = false
             for idx, srv in pairs(shd_servers) do
-                if srv.host == server.host and srv.port == server.port then
+                if srv.host == server.host and
+                    tonumber(srv.port) == tonumber(server.port) then
                     tab_remove(shd_servers, idx)
                     deleted = true
                     break
@@ -1314,6 +1334,8 @@ function _M.delete_server(skey, level, server)
         end
     elseif err then
         return false, err
+    else
+        return false, "cluster " .. key .. " not found"
     end
 
     return true
