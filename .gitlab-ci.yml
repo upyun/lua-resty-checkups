@@ -1,5 +1,12 @@
 image: repo.upyun.com:5043/ci-shared-runner
 
+services:
+    - redis
+
+before_script:
+    - echo "tcppm 6379 redis 6379" > /tmp/3proxy.cfg
+    - 3proxy /tmp/3proxy.cfg &
+
 test:
     script:
         - make test
