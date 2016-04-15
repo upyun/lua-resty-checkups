@@ -961,8 +961,8 @@ local function shd_config_syncer(premature)
             for level, cls in pairs(ups.cluster) do
                 local shd_servers, err = shd_config:get(_gen_shd_key(skey, level))
 
-                --log(DEBUG, skey, ":", level, ", worker: ", cjson.encode(cls.servers),
-                --    ", shm: ", cjson.encode(shd_servers))
+                log(ngx.INFO, skey, ":", level, ", worker: ", cjson.encode(cls.servers),
+                    ", shm: ", cjson.encode(shd_servers))
 
                 if shd_servers then
                     shd_servers = cjson.decode(shd_servers)
