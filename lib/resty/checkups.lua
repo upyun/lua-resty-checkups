@@ -1294,6 +1294,43 @@ function _M.add_server(skey, level, server)
 end
 
 
+function _M.update_servers(skey, level, servers)
+    if not servers or not next(servers) then
+        return false, "can not set empty servers"
+    end
+
+    local ok, err, new_ver
+    for _, srv in pairs(servers) do
+        ok, err = check_update_server_args(skey, level, srv)
+        if not ok then
+            return false, err
+        end
+    end
+
+    local key = _gen_shd_key(skey, level)
+    local shd_servers, err = shd_config:get(key)
+    if shd_servers then
+        ok, err = shd_config:set(key, cjson.encode(servers))
+        if err then
+            log(WARN, "failed to set new servers to shm")
+            return false, err
+        end
+
+        new_ver, err = shd_config:incr(SHD_CONFIG_VERSTION_KEY, 1)
+        if err then
+            log(WARN, "failed to set new version to shm")
+            return false, err
+        end
+    elseif err then
+        return false, err
+    else
+        return false, "cluster " .. key .. " not found"
+    end
+
+    return true
+end
+
+
 function _M.delete_server(skey, level, server)
     local ok, err = check_update_server_args(skey, level, server)
     if not ok then
