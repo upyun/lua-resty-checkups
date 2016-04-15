@@ -1178,7 +1178,7 @@ end
 
 local function get_upstream_status(skey)
     local ups = upstream.checkups[skey]
-    if not ups or ups.enable == false then
+    if not ups then
         return
     end
 
@@ -1193,13 +1193,17 @@ local function get_upstream_status(skey)
                 local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX ..
                                                            peer_key)) or {}
                 peer_status.server = peer_key
-                if not peer_status.status or
-                    peer_status.status == _M.STATUS_OK then
-                    peer_status.status = "ok"
-                elseif peer_status.status == _M.STATUS_ERR then
-                    peer_status.status = "err"
+                if ups.enable == false then
+                    peer_status.status = "unchecked"
                 else
-                    peer_status.status = "unstable"
+                    if not peer_status.status or
+                        peer_status.status == _M.STATUS_OK then
+                        peer_status.status = "ok"
+                    elseif peer_status.status == _M.STATUS_ERR then
+                        peer_status.status = "err"
+                    else
+                        peer_status.status = "unstable"
+                    end
                 end
                 tab_insert(ups_status[level], peer_status)
             end
