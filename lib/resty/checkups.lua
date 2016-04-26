@@ -1124,7 +1124,7 @@ function _M.prepare_checker(config)
     upstream.ups_status_timer_interval = config.global.ups_status_timer_interval
         or 5
     upstream.checkup_shd_sync_enable = config.global.checkup_shd_sync_enable
-    upstream.shd_config_prefix = config.global.shd_config_prefix or "shd"
+    upstream.shd_config_prefix = config.global.shd_config_prefix or "shd_config"
     upstream.shd_config_timer_interval = config.global.shd_config_timer_interval
         or upstream.checkup_timer_interval
 
@@ -1141,11 +1141,11 @@ function _M.prepare_checker(config)
                         if phase == "init" or
                             phase == "init_worker" and worker_id() == 0 then
                             local key = _gen_shd_key(skey, level)
-                            local old_cfg, err = shd_config:get(key)
-                            if not old_cfg and not err then
-                                shd_config:set(key, cjson.encode(cls.servers))
+                            local _, err = shd_config:get(key)
+                            if err then
+                                log(ERR, "failed to get config from shm, ", err)
                             else
-                                log(ERR, "failed to set config to shm, ", err)
+                                shd_config:set(key, cjson.encode(cls.servers))
                             end
                         end
                     else
