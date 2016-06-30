@@ -28,6 +28,7 @@ local state     = ngx.shared.state
 local shd_config= ngx.shared.config
 local log       = ngx.log
 
+local INFO = ngx.INFO
 local ERR  = ngx.ERR
 local WARN = ngx.WARN
 local DEBUG = ngx.DEBUG
@@ -42,6 +43,7 @@ local CHECKUP_TIMER_KEY = "checkups:timer"
 local CHECKUP_LAST_CHECK_TIME_KEY = "checkups:last_check_time"
 local CHECKUP_TIMER_ALIVE_KEY = "checkups:timer_alive"
 local SHD_CONFIG_VERSTION_KEY = "config_version"
+local SKEYS_KEY = "checkups:skeys"
 
 local PEER_STATUS_PREFIX = "checkups:peer_status:"
 
@@ -87,6 +89,8 @@ end
 
 
 local function cluster_eq(c1, c2)
+    if c1 and not c2 or c2 and not c1 then return false end
+
     if #c1 ~= #c2 then return false end
     for i=1, #c1 do
         local s1 = c1[i]
@@ -956,8 +960,27 @@ local function shd_config_syncer(premature)
     local config_version, err = shd_config:get(SHD_CONFIG_VERSTION_KEY)
 
     if config_version and config_version > upstream.shd_config_version then
+        local skeys = shd_config:get(SKEYS_KEY)
+        if skeys then
+            skeys = cjson.decode(skeys)
+        else
+            skeys = {}
+        end
+
         local success = true
-        for skey, ups in pairs(upstream.checkups) do
+        for skey, _ in pairs(skeys) do
+            -- add new skey
+            if not upstream.checkups[skey] then
+                upstream.checkups[skey] = {
+                    cluster = {
+                        -- level 1
+                        {},
+                    },
+                }
+            end
+
+            local ups = upstream.checkups[skey]
+
             for level, cls in pairs(ups.cluster) do
                 local shd_servers, err = shd_config:get(_gen_shd_key(skey, level))
 
@@ -1128,9 +1151,11 @@ function _M.prepare_checker(config)
     upstream.shd_config_timer_interval = config.global.shd_config_timer_interval
         or upstream.checkup_timer_interval
 
+    local skeys = {}
     for skey, ups in pairs(config) do
         if type(ups) == "table" and type(ups.cluster) == "table" then
             upstream.checkups[skey] = table_dup(ups)
+            skeys[skey] = 1
             for level, cls in pairs(upstream.checkups[skey].cluster) do
                 extract_servers_from_upstream(skey, cls)
 
@@ -1167,6 +1192,7 @@ function _M.prepare_checker(config)
             local shd_config_version, err = shd_config:get(SHD_CONFIG_VERSTION_KEY)
             if not shd_config_version and not err then
                 shd_config:set(SHD_CONFIG_VERSTION_KEY, 0)
+                shd_config:set(SKEYS_KEY, cjson.encode(skeys))
             end
         end
         upstream.shd_config_version = 0
@@ -1234,9 +1260,6 @@ local function check_update_server_args(skey, level, server)
     if type(skey) ~= "string" then
         return false, "skey must be a string"
     end
-    if not upstream.checkups[skey] then
-        return false, skey .. " not exists"
-    end
     if type(level) ~= "number" and type(level) ~= "string" then
         return false, "level must be string or number"
     end
@@ -1257,41 +1280,63 @@ function _M.add_server(skey, level, server)
         return false, err
     end
 
+    local new_servers = false
+    local skeys = shd_config:get(SKEYS_KEY)
+    if not skeys then
+        skeys = {}
+    else
+        skeys = cjson.decode(skeys)
+    end
+
+    if not skeys[skey] then
+        new_servers = true
+    end
+
     local key = _gen_shd_key(skey, level)
     local shd_servers, err = shd_config:get(key)
-    if shd_servers then
-        shd_servers = cjson.decode(shd_servers)
-        if shd_servers then
-            local exists = false
-            for idx, srv in pairs(shd_servers) do
-                if srv.host == server.host and
-                    tonumber(srv.port) == tonumber(server.port) then
-                    exists = true
-                    break
-                end
-            end
-            if not exists then
-                tab_insert(shd_servers, server)
-                local new_ver, ok, err
-                ok, err = shd_config:set(key, cjson.encode(shd_servers))
-                if err then
-                    log(WARN, "failed to set new servers to shm")
-                    return false, err
-                end
+    if err then
+        return false, err
+    end
 
-                new_ver, err = shd_config:incr(SHD_CONFIG_VERSTION_KEY, 1)
-                if err then
-                    log(WARN, "failed to set new version to shm")
-                    return false, err
-                end
-            else
-                return false, "server already exists"
+    if shd_servers then     -- update servers
+        shd_servers = cjson.decode(shd_servers)
+    else
+        shd_servers = {}
+    end
+
+    local exists = false
+    for idx, srv in pairs(shd_servers) do
+        if srv.host == server.host and
+            tonumber(srv.port) == tonumber(server.port) then
+            exists = true
+            break
+        end
+    end
+    if not exists then
+        tab_insert(shd_servers, server)
+        local new_ver, ok, err
+        ok, err = shd_config:set(key, cjson.encode(shd_servers))
+        if err then
+            log(WARN, "failed to set new servers to shm")
+            return false, err
+        end
+
+        if new_servers then
+            skeys[skey] = 1
+            local _, err = shd_config:set(SKEYS_KEY, cjson.encode(skeys))
+            if err then
+                log(WARN, "failed to set new skeys to shm")
+                return false, err
             end
         end
-    elseif err then
-        return false, err
+
+        new_ver, err = shd_config:incr(SHD_CONFIG_VERSTION_KEY, 1)
+        if err then
+            log(WARN, "failed to set new version to shm")
+            return false, err
+        end
     else
-        return false, "cluster " .. key .. " not found"
+        return false, "server already exists"
     end
 
     return true
@@ -1313,22 +1358,35 @@ function _M.update_servers(skey, level, servers)
 
     local key = _gen_shd_key(skey, level)
     local shd_servers, err = shd_config:get(key)
-    if shd_servers then
-        ok, err = shd_config:set(key, cjson.encode(servers))
-        if err then
-            log(WARN, "failed to set new servers to shm")
-            return false, err
-        end
-
-        new_ver, err = shd_config:incr(SHD_CONFIG_VERSTION_KEY, 1)
-        if err then
-            log(WARN, "failed to set new version to shm")
-            return false, err
-        end
-    elseif err then
+    if err then
         return false, err
-    else
-        return false, "cluster " .. key .. " not found"
+    end
+
+    ok, err = shd_config:set(key, cjson.encode(servers))
+    if err then
+        log(WARN, "failed to set new servers to shm")
+        return false, err
+    end
+
+    -- new skey
+    if not shd_servers then
+        local skeys = shd_config:get(SKEYS_KEY)
+        if skeys then
+            skeys = cjson.decode(skeys)
+            skeys[skey] = 1
+            local _, err = shd_config:set(SKEYS_KEY, cjson.encode(skeys))
+            if err then
+                log(WARN, "failed to set new skeys to shm")
+                return false, err
+            end
+        end
+        log(INFO, "add new skey to upstreams, ", skey)
+    end
+
+    new_ver, err = shd_config:incr(SHD_CONFIG_VERSTION_KEY, 1)
+    if err then
+        log(WARN, "failed to set new version to shm")
+        return false, err
     end
 
     return true
