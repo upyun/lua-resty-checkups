@@ -1280,7 +1280,6 @@ function _M.add_server(skey, level, server)
         return false, err
     end
 
-    local new_servers = false
     local skeys = shd_config:get(SKEYS_KEY)
     if not skeys then
         skeys = {}
@@ -1288,11 +1287,32 @@ function _M.add_server(skey, level, server)
         skeys = cjson.decode(skeys)
     end
 
-    if not skeys[skey] then
-        new_servers = true
+    local key = _gen_shd_key(skey, level)
+
+    local _, err = shd_config:incr(SHD_CONFIG_VERSTION_KEY, 1)
+    if err then
+        log(WARN, "failed to set new version to shm")
+        return false, err
     end
 
-    local key = _gen_shd_key(skey, level)
+    -- new servers
+    if not skeys[skey] then
+        local ok, err = shd_config:set(key, cjson.encode({ server }))
+        if err then
+            log(WARN, "failed to set new servers to shm")
+            return false, err
+        end
+
+        skeys[skey] = 1
+        local _, err = shd_config:set(SKEYS_KEY, cjson.encode(skeys))
+        if err then
+            log(WARN, "failed to set new skeys to shm")
+            return false, err
+        end
+
+        return true
+    end
+
     local shd_servers, err = shd_config:get(key)
     if err then
         return false, err
@@ -1314,25 +1334,9 @@ function _M.add_server(skey, level, server)
     end
     if not exists then
         tab_insert(shd_servers, server)
-        local new_ver, ok, err
-        ok, err = shd_config:set(key, cjson.encode(shd_servers))
+        local _, err = shd_config:set(key, cjson.encode(shd_servers))
         if err then
             log(WARN, "failed to set new servers to shm")
-            return false, err
-        end
-
-        if new_servers then
-            skeys[skey] = 1
-            local _, err = shd_config:set(SKEYS_KEY, cjson.encode(skeys))
-            if err then
-                log(WARN, "failed to set new skeys to shm")
-                return false, err
-            end
-        end
-
-        new_ver, err = shd_config:incr(SHD_CONFIG_VERSTION_KEY, 1)
-        if err then
-            log(WARN, "failed to set new version to shm")
             return false, err
         end
     else
@@ -1356,12 +1360,20 @@ function _M.update_servers(skey, level, servers)
         end
     end
 
-    local key = _gen_shd_key(skey, level)
-    local shd_servers, err = shd_config:get(key)
+    local skeys = shd_config:get(SKEYS_KEY)
+    if skeys then
+        skeys = cjson.decode(skeys)
+    else
+        skeys = {}
+    end
+
+    new_ver, err = shd_config:incr(SHD_CONFIG_VERSTION_KEY, 1)
     if err then
+        log(WARN, "failed to set new version to shm")
         return false, err
     end
 
+    local key = _gen_shd_key(skey, level)
     ok, err = shd_config:set(key, cjson.encode(servers))
     if err then
         log(WARN, "failed to set new servers to shm")
@@ -1369,24 +1381,14 @@ function _M.update_servers(skey, level, servers)
     end
 
     -- new skey
-    if not shd_servers then
-        local skeys = shd_config:get(SKEYS_KEY)
-        if skeys then
-            skeys = cjson.decode(skeys)
-            skeys[skey] = 1
-            local _, err = shd_config:set(SKEYS_KEY, cjson.encode(skeys))
-            if err then
-                log(WARN, "failed to set new skeys to shm")
-                return false, err
-            end
+    if not skeys[skey] then
+        skeys[skey] = 1
+        local _, err = shd_config:set(SKEYS_KEY, cjson.encode(skeys))
+        if err then
+            log(WARN, "failed to set new skeys to shm")
+            return false, err
         end
         log(INFO, "add new skey to upstreams, ", skey)
-    end
-
-    new_ver, err = shd_config:incr(SHD_CONFIG_VERSTION_KEY, 1)
-    if err then
-        log(WARN, "failed to set new version to shm")
-        return false, err
     end
 
     return true
@@ -1418,15 +1420,15 @@ function _M.delete_server(skey, level, server)
             end
             if deleted then
                 local new_ver, ok, err
-                ok, err = shd_config:set(key, cjson.encode(shd_servers))
-                if err then
-                    log(WARN, "failed to set new servers to shm")
-                    return false, err
-                end
-
                 new_ver, err = shd_config:incr(SHD_CONFIG_VERSTION_KEY, 1)
                 if err then
                     log(WARN, "failed to set new version to shm")
+                    return false, err
+                end
+
+                ok, err = shd_config:set(key, cjson.encode(shd_servers))
+                if err then
+                    log(WARN, "failed to set new servers to shm")
                     return false, err
                 end
             end
