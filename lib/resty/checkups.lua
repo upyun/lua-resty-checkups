@@ -967,6 +967,13 @@ local function shd_config_syncer(premature)
             skeys = {}
         end
 
+        -- delete skey from upstream
+        for skey, _ in pairs(upstream.checkups) do
+            if not skeys[skey] then
+                upstream.checkups[skey] = nil
+            end
+        end
+
         local success = true
         for skey, _ in pairs(skeys) do
             -- add new skey
@@ -1406,9 +1413,6 @@ function _M.delete_server(skey, level, server)
     if shd_servers then
         shd_servers = cjson.decode(shd_servers)
         if shd_servers then
-            if #shd_servers <= 1 then
-                return false, "can not delete the last server"
-            end
             local deleted = false
             for idx, srv in pairs(shd_servers) do
                 if srv.host == server.host and
@@ -1430,6 +1434,21 @@ function _M.delete_server(skey, level, server)
                 if err then
                     log(WARN, "failed to set new servers to shm")
                     return false, err
+                end
+
+                -- the last server is deleted, remove skey from skey list.
+                if not next(shd_servers) then
+                    local skeys = shd_config:get(SKEYS_KEY)
+                    if skeys then
+                        skeys = cjson.decode(skeys)
+                        skeys[skey] = nil
+                        local _, err = shd_config:set(SKEYS_KEY, cjson.encode(skeys))
+                        if err then
+                            log(WARN, "failed to set new skeys to shm")
+                            return false, err
+                        end
+                        log(INFO, "delete skey from upstreams, ", skey)
+                    end
                 end
             end
         end

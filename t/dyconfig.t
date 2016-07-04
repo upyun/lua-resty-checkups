@@ -185,13 +185,6 @@ server already exists
             ok, err = checkups.delete_server("ups2", 0, {host="127.0.0.1", port=12350})
             if err then ngx.say(err) end
 
-            -- ups2, delete empty level
-            ok, err = checkups.delete_server("ups2", 2, {host="127.0.0.1", port=12350})
-            if err then ngx.say(err) end
-
-            -- ups2, delete the last server
-            ok, err = checkups.delete_server("ups2", 1, {host="127.0.0.1", port=12350})
-            if err then ngx.say(err) end
             ngx.sleep(1)
             ok, err = checkups.ready_ok("ups2", callback)
             if err then ngx.say(err) end
@@ -245,8 +238,6 @@ server already exists
 GET /t
 --- response_body
 cluster shd_v2:ups2:0 not found
-can not delete the last server
-can not delete the last server
 12350
 12350
 12351
@@ -293,10 +284,6 @@ can not delete the last server
             ok, err = checkups.delete_server("ups3", 1, {host="127.0.0.1", port=12350})
             if err then ngx.say(err) end
 
-            -- delete the last server
-            ok, err = checkups.delete_server("ups3", 1, {host="127.0.0.1", port=12351})
-            if err then ngx.say(err) end
-
             ngx.sleep(1)
 
             ok, err = checkups.ready_ok("ups3", callback)
@@ -318,7 +305,6 @@ can not delete the last server
 --- request
 GET /t
 --- response_body
-can not delete the last server
 12351
 12351
 12351
@@ -540,8 +526,13 @@ unknown skey new_ups
             ok, err = checkups.delete_server("new_ups", 1, {host="127.0.0.1", port=12352})
             if err then ngx.say(err) end
 
-            -- last one
+            -- delete the last one
             ok, err = checkups.delete_server("new_ups", 1, {host="127.0.0.1", port=12353})
+            if err then ngx.say(err) end
+
+            ngx.sleep(1)
+
+            ok, err = checkups.ready_ok("new_ups", callback)
             if err then ngx.say(err) end
         ';
     }
@@ -554,6 +545,6 @@ cluster shd_v2:new_ups:1 not found
 12352
 12353
 12350
-can not delete the last server
+unknown skey new_ups
 
 --- timeout: 10
