@@ -545,6 +545,86 @@ cluster shd_v2:new_ups:1 not found
 12352
 12353
 12350
-unknown skey new_ups
+no upstream available
+
+--- timeout: 10
+
+
+=== TEST 7: add new level to new upstream
+--- http_config eval: $::HttpConfig
+--- config
+    location = /12350 {
+        proxy_pass http://127.0.0.1:12350/;
+    }
+    location = /12351 {
+        proxy_pass http://127.0.0.1:12351/;
+    }
+    location = /12352 {
+        proxy_pass http://127.0.0.1:12352/;
+    }
+    location = /12353 {
+        proxy_pass http://127.0.0.1:12353/;
+    }
+
+    location = /t {
+        content_by_lua '
+            local checkups = require "resty.checkups"
+            checkups.create_checker()
+            ngx.sleep(2)
+
+            local callback = function(host, port)
+                local res = ngx.location.capture("/" .. port)
+                ngx.say(res.body)
+                return 1
+            end
+
+            local ok, err
+
+            ok, err = checkups.add_server("new_ups", 1, {host="127.0.0.1", port=12350})
+            if err then ngx.say(err) end
+            ok, err = checkups.add_server("new_ups", 2, {host="127.0.0.1", port=12351})
+            if err then ngx.say(err) end
+
+            ngx.sleep(1)
+
+            ok, err = checkups.ready_ok("new_ups", callback)
+            if err then ngx.say(err) end
+
+            ok, err = checkups.ready_ok("new_ups", callback)
+            if err then ngx.say(err) end
+
+            ok, err = checkups.delete_server("new_ups", 1, {host="127.0.0.1", port=12350})
+            if err then ngx.say(err) end
+            ngx.sleep(1)
+
+            ok, err = checkups.ready_ok("new_ups", callback)
+            if err then ngx.say(err) end
+
+            ok, err = checkups.ready_ok("new_ups", callback)
+            if err then ngx.say(err) end
+
+            ok, err = checkups.add_server("new_ups", 1, {host="127.0.0.1", port=12352})
+            if err then ngx.say(err) end
+            ok, err = checkups.add_server("new_ups", 1, {host="127.0.0.1", port=12353})
+            if err then ngx.say(err) end
+
+            ngx.sleep(1)
+
+            ok, err = checkups.ready_ok("new_ups", callback)
+            if err then ngx.say(err) end
+
+            ok, err = checkups.ready_ok("new_ups", callback)
+            if err then ngx.say(err) end
+        ';
+    }
+--- request
+GET /t
+--- response_body
+12350
+12350
+12351
+12351
+12352
+12353
 
 --- timeout: 10
