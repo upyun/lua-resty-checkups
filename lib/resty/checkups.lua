@@ -969,6 +969,12 @@ local function shd_config_syncer(premature)
         return
     end
 
+    local lock, err = get_lock(SKEYS_KEY)
+    if not lock then
+        log(WARN, "failed to acquire the lock: ", err)
+        return
+    end
+
     local config_version, err = shd_config:get(SHD_CONFIG_VERSTION_KEY)
 
     if config_version and config_version > upstream.shd_config_version then
@@ -1035,6 +1041,8 @@ local function shd_config_syncer(premature)
     elseif err then
         log(WARN, "failed to get config version from shm")
     end
+
+    release_lock(lock)
 
     local interval = upstream.shd_config_timer_interval
     local overtime = upstream.checkup_timer_overtime
@@ -1311,6 +1319,13 @@ function _M.add_server(skey, level, server)
         return false, err
     end
 
+    local lock
+    lock, err = get_lock(SKEYS_KEY)
+    if not lock then
+        log(WARN, "failed to acquire the lock: ", err)
+        return false, err
+    end
+
     local skeys = shd_config:get(SKEYS_KEY)
     if not skeys then
         skeys = {}
@@ -1323,6 +1338,7 @@ function _M.add_server(skey, level, server)
     local _, err = shd_config:incr(SHD_CONFIG_VERSTION_KEY, 1)
     if err then
         log(WARN, "failed to set new version to shm")
+        release_lock(lock)
         return false, err
     end
 
@@ -1332,6 +1348,7 @@ function _M.add_server(skey, level, server)
         local ok, err = shd_config:set(key, cjson.encode({ server }))
         if err then
             log(WARN, "failed to set new servers to shm")
+            release_lock(lock)
             return false, err
         end
 
@@ -1340,14 +1357,17 @@ function _M.add_server(skey, level, server)
         local _, err = shd_config:set(SKEYS_KEY, cjson.encode(skeys))
         if err then
             log(WARN, "failed to set new skeys to shm")
+            release_lock(lock)
             return false, err
         end
 
+        release_lock(lock)
         return true
     end
 
     local shd_servers, err = shd_config:get(key)
     if err then
+        release_lock(lock)
         return false, err
     end
 
@@ -1370,11 +1390,15 @@ function _M.add_server(skey, level, server)
         local _, err = shd_config:set(key, cjson.encode(shd_servers))
         if err then
             log(WARN, "failed to set new servers to shm")
+            release_lock(lock)
             return false, err
         end
     else
+        release_lock(lock)
         return false, "server already exists"
     end
+
+    release_lock(lock)
 
     return true
 end
@@ -1393,6 +1417,13 @@ function _M.update_servers(skey, level, servers)
         end
     end
 
+    local lock
+    lock, err = get_lock(SKEYS_KEY)
+    if not lock then
+        log(WARN, "failed to acquire the lock: ", err)
+        return false, err
+    end
+
     local skeys = shd_config:get(SKEYS_KEY)
     if skeys then
         skeys = cjson.decode(skeys)
@@ -1403,6 +1434,7 @@ function _M.update_servers(skey, level, servers)
     new_ver, err = shd_config:incr(SHD_CONFIG_VERSTION_KEY, 1)
     if err then
         log(WARN, "failed to set new version to shm")
+        release_lock(lock)
         return false, err
     end
 
@@ -1410,6 +1442,7 @@ function _M.update_servers(skey, level, servers)
     ok, err = shd_config:set(key, cjson.encode(servers))
     if err then
         log(WARN, "failed to set new servers to shm")
+        release_lock(lock)
         return false, err
     end
 
@@ -1422,10 +1455,13 @@ function _M.update_servers(skey, level, servers)
         local _, err = shd_config:set(SKEYS_KEY, cjson.encode(skeys))
         if err then
             log(WARN, "failed to set new skeys to shm")
+            release_lock(lock)
             return false, err
         end
         log(INFO, "add new skey to upstreams, ", skey)
     end
+
+    release_lock(lock)
 
     return true
 end
@@ -1434,6 +1470,13 @@ end
 function _M.delete_server(skey, level, server)
     local ok, err = check_update_server_args(skey, level, server)
     if not ok then
+        return false, err
+    end
+
+    local lock
+    lock, err = get_lock(SKEYS_KEY)
+    if not lock then
+        log(WARN, "failed to acquire the lock: ", err)
         return false, err
     end
 
@@ -1456,12 +1499,14 @@ function _M.delete_server(skey, level, server)
                 new_ver, err = shd_config:incr(SHD_CONFIG_VERSTION_KEY, 1)
                 if err then
                     log(WARN, "failed to set new version to shm")
+                    release_lock(lock)
                     return false, err
                 end
 
                 ok, err = shd_config:set(key, cjson.encode(shd_servers))
                 if err then
                     log(WARN, "failed to set new servers to shm")
+                    release_lock(lock)
                     return false, err
                 end
 
@@ -1483,6 +1528,7 @@ function _M.delete_server(skey, level, server)
                         local _, err = shd_config:set(SKEYS_KEY, cjson.encode(skeys))
                         if err then
                             log(WARN, "failed to set new skeys to shm")
+                            release_lock(lock)
                             return false, err
                         end
                         log(INFO, "delete skey from upstreams, ", skey)
@@ -1491,10 +1537,14 @@ function _M.delete_server(skey, level, server)
             end
         end
     elseif err then
+        release_lock(lock)
         return false, err
     else
+        release_lock(lock)
         return false, "cluster " .. key .. " not found"
     end
+
+    release_lock(lock)
 
     return true
 end
@@ -1563,7 +1613,7 @@ function _M.create_checker()
         return
     end
 
-    local lock = get_lock(ckey)
+    local lock, err = get_lock(ckey)
     if not lock then
         log(WARN, "failed to acquire the lock: ", err)
         return
