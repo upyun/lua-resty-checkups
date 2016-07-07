@@ -43,7 +43,7 @@ for my $file (map glob, qw{ *.lua lib/*.lua lib/*/*.lua lib/*/*/*.lua lib/*/*/*/
     # use tee: use Capture::Tiny 'tee'
     #my $output = tee {system("luac -p -l $file | grep ETGLOBAL | grep -vE 'require|type|tostring|error|ngx|ndk|jit|setmetatable|getmetatable|string|table|io|os|print|tonumber|math|pcall|xpcall|unpack|pairs|ipairs|assert|module|package|coroutine|[gs]etfenv|next|select|rawset|rawget|debug'")};
     # or this simple way
-    my $output = `luac -p -l $file | grep ETGLOBAL | grep -vE 'require|type|tostring|error|ngx|ndk|jit|setmetatable|getmetatable|string|table|io|os|print|tonumber|math|pcall|xpcall|unpack|pairs|ipairs|assert|module|package|coroutine|[gs]etfenv|next|select|rawset|rawget|debug'`;
+    my $output = `luac5.1 -p -l $file | grep ETGLOBAL | grep -vE 'require|type|tostring|error|ngx|ndk|jit|setmetatable|getmetatable|string|table|io|os|print|tonumber|math|pcall|xpcall|unpack|pairs|ipairs|assert|module|package|coroutine|[gs]etfenv|next|select|rawset|rawget|debug'`;
     print $output;
 
     if ($output =~ /(SET|GET)GLOBAL/) {
