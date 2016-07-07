@@ -550,6 +550,33 @@ local function try_cluster(skey, ups, cls, callback, opts, try_again)
 end
 
 
+function _M.feedback_status(skey, host, port, failed)
+    local ups = upstream.checkups[skey]
+    if not ups then
+        return false, "unknown skey " .. skey
+    end
+
+    local srv
+    for level, cls in pairs(ups.cluster) do
+        for _, s in ipairs(cls.servers) do
+            if s.host == host and s.port == port then
+                srv = s
+                goto done
+            end
+        end
+    end
+
+    if not srv then
+        return false, "unknown host:port" .. host .. ":" .. port
+    end
+
+    ::done::
+
+    set_srv_status(skey, srv, failed)
+    return true
+end
+
+
 function _M.ready_ok(skey, callback, opts)
     opts = opts or {}
     local ups = upstream.checkups[skey]
