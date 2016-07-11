@@ -814,7 +814,8 @@ local heartbeat = {
 
 local function cluster_heartbeat(skey)
     local ups = upstream.checkups[skey]
-    if ups.enable == false then
+    if ups.enable == false or (ups.enable == nil and
+        upstream.default_heartbeat_enable == false) then
         return
     end
 
@@ -1187,6 +1188,7 @@ function _M.prepare_checker(config)
     upstream.shd_config_prefix = config.global.shd_config_prefix or "shd_config"
     upstream.shd_config_timer_interval = config.global.shd_config_timer_interval
         or upstream.checkup_timer_interval
+    upstream.default_heartbeat_enable = config.global.default_heartbeat_enable
 
     local skeys = {}
     for skey, ups in pairs(config) do
@@ -1258,7 +1260,8 @@ local function get_upstream_status(skey)
                 local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX ..
                                                            peer_key)) or {}
                 peer_status.server = peer_key
-                if ups.enable == false then
+                if ups.enable == false or (ups.enable == nil and
+                    upstream.default_heartbeat_enable == false) then
                     peer_status.status = "unchecked"
                 else
                     if not peer_status.status or
