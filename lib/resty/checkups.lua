@@ -13,7 +13,6 @@ local sqrt       = math.sqrt
 local tab_sort   = table.sort
 local tab_concat = table.concat
 local tab_insert = table.insert
-local tab_remove = table.remove
 local unpack     = unpack
 
 local get_phase = ngx.get_phase
@@ -32,7 +31,6 @@ local now       = ngx.now
 local INFO = ngx.INFO
 local ERR  = ngx.ERR
 local WARN = ngx.WARN
-local DEBUG = ngx.DEBUG
 
 local resty_redis, resty_mysql, ngx_upstream
 
@@ -593,7 +591,7 @@ function _M.ready_ok(skey, callback, opts)
         for _, cls_key in ipairs({ opts.cluster_key.default,
             opts.cluster_key.backup }) do
             local cls = ups.cluster[cls_key]
-            if cls and cls.servers and next(cls.servers) then
+            if cls then
                 res, cont, err = try_cluster(skey, ups, cls, callback, opts, try_again)
                 if res then
                     return res, err
@@ -616,21 +614,19 @@ function _M.ready_ok(skey, callback, opts)
 
     -- try by level
     for level, cls in ipairs(ups.cluster) do
-        if cls.servers and next(cls.servers) then
-            res, cont, err = try_cluster(skey, ups, cls, callback, opts, try_again)
-            if res then
-                return res, err
-            end
+        res, cont, err = try_cluster(skey, ups, cls, callback, opts, try_again)
+        if res then
+            return res, err
+        end
 
-            -- continue to next level?
-            if not cont then break end
+        -- continue to next level?
+        if not cont then break end
 
-            if type(cont) == "number" then
-                if cont < 1 then
-                    break
-                else
-                    try_again = cont
-                end
+        if type(cont) == "number" then
+            if cont < 1 then
+                break
+            else
+                try_again = cont
             end
         end
     end
