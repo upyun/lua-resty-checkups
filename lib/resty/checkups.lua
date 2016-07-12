@@ -44,7 +44,7 @@ local CHECKUP_TIMER_KEY = "checkups:timer"
 local CHECKUP_LAST_CHECK_TIME_KEY = "checkups:last_check_time"
 local CHECKUP_TIMER_ALIVE_KEY = "checkups:timer_alive"
 local SHD_CONFIG_VERSTION_KEY = "config_version"
-local SKEYS_KEY = "checkups:skeys"
+local SKEYS_KEY = "checkups:skeys:v1"
 
 local PEER_STATUS_PREFIX = "checkups:peer_status:"
 
@@ -74,16 +74,6 @@ local function release_lock(lock)
 end
 
 
-local function in_array(arr, e)
-    for _, k in ipairs(arr) do
-        if k == e then
-            return true
-        end
-    end
-    return false
-end
-
-
 local function table_dup(ori_tab)
     if type(ori_tab) ~= "table" then
         return ori_tab
@@ -97,25 +87,6 @@ local function table_dup(ori_tab)
         end
     end
     return new_tab
-end
-
-
-local function cluster_eq(c1, c2)
-    if c1 and not c2 or c2 and not c1 then return false end
-
-    if #c1 ~= #c2 then return false end
-    for i=1, #c1 do
-        local s1 = c1[i]
-        local s2 = c2[i]
-        if type(s1) ~= type(s2) then return false end
-        if type(s1) == "string" and s1 ~= s2 then
-            return false
-        elseif type(s1) == "table" and
-            (s1.host ~= s2.host or tonumber(s1.port) ~= tonumber(s2.port)) then
-            return false
-        end
-    end
-    return true
 end
 
 
@@ -218,8 +189,8 @@ local function _gen_key(skey, srv)
 end
 
 
-local function _gen_shd_key(skey, level)
-    return str_format("%s:%s:%d", upstream.shd_config_prefix, skey, level)
+local function _gen_shd_key(skey)
+    return str_format("%s:%s", upstream.shd_config_prefix, skey)
 end
 
 
@@ -1064,52 +1035,32 @@ local function shd_config_syncer(premature)
         local skeys = shd_config:get(SKEYS_KEY)
         if skeys then
             skeys = cjson.decode(skeys)
-        else
-            skeys = {}
-        end
 
-        -- delete skey from upstream
-        for skey, _ in pairs(upstream.checkups) do
-            local skey_levels = skeys[skey]
-            if not skey_levels then
-                upstream.checkups[skey] = nil
-            else
-                local ups = upstream.checkups[skey]
-                for level, _ in pairs(ups.cluster) do
-                    if not in_array(skey_levels, level) then
-                        -- do not set the level to nil, otherwise,
-                        -- ipairs(ups.cluster) may not work properly.
-                        ups.cluster[level] = {}
-                    end
+            -- delete skey from upstream
+            for skey, _ in pairs(upstream.checkups) do
+                if not skeys[skey] then
+                    upstream.checkups[skey] = nil
                 end
             end
-        end
 
-        local success = true
-        for skey, skey_levels in pairs(skeys) do
-            -- add new skey
-            if not upstream.checkups[skey] then
-                upstream.checkups[skey] = {cluster = {}}
-            end
+            local success = true
+            for skey, _ in pairs(skeys) do
+                local shd_servers, err = shd_config:get(_gen_shd_key(skey))
 
-            local ups = upstream.checkups[skey]
-
-            for _, level in ipairs(skey_levels) do
-                if not ups.cluster[level] then
-                    ups.cluster[level] = {}
-                end
-
-                local cls = ups.cluster[level]
-
-                local shd_servers, err = shd_config:get(_gen_shd_key(skey, level))
-
-                log(ngx.INFO, skey, ":", level, ", worker: ", cjson.encode(cls.servers),
-                    ", shm: ", cjson.encode(shd_servers))
+                log(ngx.INFO, "get ", skey, " from shm: ", shd_servers)
 
                 if shd_servers then
                     shd_servers = cjson.decode(shd_servers)
-                    if shd_servers and not cluster_eq(shd_servers, cls.servers) then
-                        cls.servers = table_dup(shd_servers)
+                    -- add new skey
+                    if not upstream.checkups[skey] then
+                        upstream.checkups[skey] = {}
+                    end
+
+                    upstream.checkups[skey].cluster = table_dup(shd_servers)
+
+                    local ups = upstream.checkups[skey].cluster
+                    -- only reset for rr cluster
+                    for level, cls in ipairs(ups) do
                         _M.reset_round_robin_state(cls)
                     end
                 elseif err then
@@ -1117,9 +1068,10 @@ local function shd_config_syncer(premature)
                     log(WARN, "failed to get from shm: ", err)
                 end
             end
-        end
-        if success then
-            upstream.shd_config_version = config_version
+
+            if success then
+                upstream.shd_config_version = config_version
+            end
         end
     elseif err then
         log(WARN, "failed to get config version from shm")
@@ -1282,34 +1234,28 @@ function _M.prepare_checker(config)
     for skey, ups in pairs(config) do
         if type(ups) == "table" and type(ups.cluster) == "table" then
             upstream.checkups[skey] = table_dup(ups)
-            local levels = {}
+
             for level, cls in pairs(upstream.checkups[skey].cluster) do
                 extract_servers_from_upstream(skey, cls)
-
-                if upstream.checkup_shd_sync_enable then
-                    if shd_config and worker_id then
-                        local phase = get_phase()
-                        -- if in init_worker phase, only worker 0 can update shm
-                        if phase == "init" or
-                            phase == "init_worker" and worker_id() == 0 then
-                            local key = _gen_shd_key(skey, level)
-                            local _, err = shd_config:get(key)
-                            if err then
-                                log(ERR, "failed to get config from shm, ", err)
-                            else
-                                shd_config:set(key, cjson.encode(cls.servers))
-                            end
-                            tab_insert(levels, level)
-                        end
-                    else
-                        log(ERR, "checkup_shd_sync_enable is true but " ..
-                            "no shd_config nor worker_id found.")
-                    end
-                end
-
                 _M.reset_round_robin_state(cls)
             end
-            skeys[skey] = levels
+
+            if upstream.checkup_shd_sync_enable then
+                if shd_config and worker_id then
+                    local phase = get_phase()
+                    -- if in init_worker phase, only worker 0 can update shm
+                    if phase == "init" or
+                        phase == "init_worker" and worker_id() == 0 then
+                        local key = _gen_shd_key(skey)
+                        shd_config:set(key, cjson.encode(upstream.checkups[skey].cluster))
+                    end
+
+                    skeys[skey] = 1
+                else
+                    log(ERR, "checkup_shd_sync_enable is true but " ..
+                        "no shd_config nor worker_id found.")
+                end
+            end
         end
     end
 
@@ -1404,107 +1350,27 @@ local function check_update_server_args(skey, level, server)
 end
 
 
-function _M.add_server(skey, level, server)
-    local ok, err = check_update_server_args(skey, level, server)
-    if not ok then
-        return false, err
-    end
-
-    local lock
-    lock, err = get_lock(SKEYS_KEY)
-    if not lock then
-        log(WARN, "failed to acquire the lock: ", err)
-        return false, err
-    end
-
-    local skeys = shd_config:get(SKEYS_KEY)
-    if not skeys then
-        skeys = {}
-    else
-        skeys = cjson.decode(skeys)
-    end
-
-    local key = _gen_shd_key(skey, level)
-
-    local _, err = shd_config:incr(SHD_CONFIG_VERSTION_KEY, 1)
-    if err then
-        log(WARN, "failed to set new version to shm")
-        release_lock(lock)
-        return false, err
-    end
-
-    local skey_levels = skeys[skey] or {}
-    -- new servers
-    if not in_array(skey_levels, level) then
-        local ok, err = shd_config:set(key, cjson.encode({ server }))
-        if err then
-            log(WARN, "failed to set new servers to shm")
-            release_lock(lock)
-            return false, err
-        end
-
-        tab_insert(skey_levels, level)
-        skeys[skey] = skey_levels
-        local _, err = shd_config:set(SKEYS_KEY, cjson.encode(skeys))
-        if err then
-            log(WARN, "failed to set new skeys to shm")
-            release_lock(lock)
-            return false, err
-        end
-
-        release_lock(lock)
-        return true
-    end
-
-    local shd_servers, err = shd_config:get(key)
-    if err then
-        release_lock(lock)
-        return false, err
-    end
-
-    if shd_servers then     -- update servers
-        shd_servers = cjson.decode(shd_servers)
-    else
-        shd_servers = {}
-    end
-
-    local exists = false
-    for idx, srv in pairs(shd_servers) do
-        if srv.host == server.host and
-            tonumber(srv.port) == tonumber(server.port) then
-            exists = true
-            break
-        end
-    end
-    if not exists then
-        tab_insert(shd_servers, server)
-        local _, err = shd_config:set(key, cjson.encode(shd_servers))
-        if err then
-            log(WARN, "failed to set new servers to shm")
-            release_lock(lock)
-            return false, err
-        end
-    else
-        release_lock(lock)
-        return false, "server already exists"
-    end
-
-    release_lock(lock)
-
-    return true
-end
-
-
-function _M.update_servers(skey, level, servers)
-    if not servers or not next(servers) then
-        return false, "can not set empty servers"
+function _M.update_upstream(skey, upstream)
+    if not upstream or not next(upstream) then
+        return false, "can not set empty upstream"
     end
 
     local ok, err, new_ver
-    for _, srv in pairs(servers) do
-        ok, err = check_update_server_args(skey, level, srv)
-        if not ok then
-            return false, err
+    for level, cls in pairs(upstream) do
+        if not cls or not next(cls) then
+            return false, "can not update empty level"
+        end
+
+        local servers = cls.servers
+        if not servers or not next(servers) then
+            return false, "can not update empty servers"
+        end
+
+        for _, srv in ipairs(servers) do
+            ok, err = check_update_server_args(skey, level, srv)
+            if not ok then
+                return false, err
+            end
         end
     end
 
@@ -1529,20 +1395,17 @@ function _M.update_servers(skey, level, servers)
         return false, err
     end
 
-    local key = _gen_shd_key(skey, level)
-    ok, err = shd_config:set(key, cjson.encode(servers))
+    local key = _gen_shd_key(skey)
+    ok, err = shd_config:set(key, cjson.encode(upstream))
     if err then
-        log(WARN, "failed to set new servers to shm")
+        log(WARN, "failed to set new upstream to shm")
         release_lock(lock)
         return false, err
     end
 
-    local skey_levels = skeys[skey] or {}
-
     -- new skey
-    if not in_array(skey_levels, level) then
-        tab_insert(skey_levels, level)
-        skeys[skey] = skey_levels
+    if not skeys[skey] then
+        skeys[skey] = 1
         local _, err = shd_config:set(SKEYS_KEY, cjson.encode(skeys))
         if err then
             log(WARN, "failed to set new skeys to shm")
@@ -1558,81 +1421,55 @@ function _M.update_servers(skey, level, servers)
 end
 
 
-function _M.delete_server(skey, level, server)
-    local ok, err = check_update_server_args(skey, level, server)
-    if not ok then
-        return false, err
-    end
-
-    local lock
+function _M.delete_upstream(skey)
+    local lock, err
     lock, err = get_lock(SKEYS_KEY)
     if not lock then
         log(WARN, "failed to acquire the lock: ", err)
         return false, err
     end
 
-    local key = _gen_shd_key(skey, level)
+    local skeys = shd_config:get(SKEYS_KEY)
+    if skeys then
+        skeys = cjson.decode(skeys)
+    else
+        release_lock(lock)
+        return false, "upstream " .. skey .. " not found"
+    end
+
+    local key = _gen_shd_key(skey)
     local shd_servers, err = shd_config:get(key)
     if shd_servers then
-        shd_servers = cjson.decode(shd_servers)
-        if shd_servers then
-            local deleted = false
-            for idx, srv in pairs(shd_servers) do
-                if srv.host == server.host and
-                    tonumber(srv.port) == tonumber(server.port) then
-                    tab_remove(shd_servers, idx)
-                    deleted = true
-                    break
-                end
-            end
-            if deleted then
-                local new_ver, ok, err
-                new_ver, err = shd_config:incr(SHD_CONFIG_VERSTION_KEY, 1)
-                if err then
-                    log(WARN, "failed to set new version to shm")
-                    release_lock(lock)
-                    return false, err
-                end
-
-                ok, err = shd_config:set(key, cjson.encode(shd_servers))
-                if err then
-                    log(WARN, "failed to set new servers to shm")
-                    release_lock(lock)
-                    return false, err
-                end
-
-                -- the last server is deleted, remove skey from skey list.
-                if not next(shd_servers) then
-                    local skeys = shd_config:get(SKEYS_KEY)
-                    if skeys then
-                        skeys = cjson.decode(skeys)
-                        local skey_levels = skeys[skey]
-                        if skey_levels and next(skey_levels) then
-                            for idx, v in ipairs(skey_levels) do
-                                if v == level then
-                                    tab_remove(skey_levels, idx)
-                                    break
-                                end
-                            end
-                        end
-
-                        local _, err = shd_config:set(SKEYS_KEY, cjson.encode(skeys))
-                        if err then
-                            log(WARN, "failed to set new skeys to shm")
-                            release_lock(lock)
-                            return false, err
-                        end
-                        log(INFO, "delete skey from upstreams, ", skey)
-                    end
-                end
-            end
+        local new_ver, ok, err
+        new_ver, err = shd_config:incr(SHD_CONFIG_VERSTION_KEY, 1)
+        if err then
+            log(WARN, "failed to set new version to shm")
+            release_lock(lock)
+            return false, err
         end
+
+        ok, err = shd_config:delete(key)
+        if err then
+            log(WARN, "failed to set new servers to shm")
+            release_lock(lock)
+            return false, err
+        end
+
+        skeys[skey] = nil
+
+        local _, err = shd_config:set(SKEYS_KEY, cjson.encode(skeys))
+        if err then
+            log(WARN, "failed to set new skeys to shm")
+            release_lock(lock)
+            return false, err
+        end
+        log(INFO, "delete skey from upstreams, ", skey)
     elseif err then
         release_lock(lock)
         return false, err
     else
         release_lock(lock)
-        return false, "cluster " .. key .. " not found"
+        return false, "upstream " .. skey .. " not found"
     end
 
     release_lock(lock)
