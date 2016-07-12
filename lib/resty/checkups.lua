@@ -23,6 +23,7 @@ local re_gmatch = ngx.re.gmatch
 local mutex     = ngx.shared.mutex
 local state     = ngx.shared.state
 local log       = ngx.log
+local now       = ngx.now
 
 local ERR  = ngx.ERR
 local WARN = ngx.WARN
@@ -30,7 +31,7 @@ local WARN = ngx.WARN
 local resty_redis, resty_mysql, ngx_upstream
 
 
-local _M = { _VERSION = "0.10",
+local _M = { _VERSION = "0.11",
              STATUS_OK = 0, STATUS_UNSTABLE = 1, STATUS_ERR = 2 }
 
 local CHECKUP_TIMER_KEY = "checkups:timer"
@@ -42,6 +43,7 @@ local PEER_STATUS_PREFIX = "checkups:peer_status:"
 local upstream = {}
 local peer_id_dict = {}
 local ups_status_timer_created
+local cluster_status = {}
 
 
 local function get_lock(key)
@@ -171,6 +173,75 @@ local function _extract_srv_host_port(name)
 
     local host, port = m[1], m[2] or 80
     return host, port
+end
+
+
+local function get_srv_status(skey, srv)
+    local server_status = cluster_status[skey]
+    if not server_status then
+        return _M.STATUS_OK
+    end
+
+    local srv_key = str_format("%s:%d", srv.host, srv.port)
+    local srv_status = server_status[srv_key]
+    local fail_timeout = srv.fail_timeout or 10
+
+    if srv_status and srv_status.lastmodify + fail_timeout > now() then
+        return srv_status.status
+    end
+
+    return _M.STATUS_OK
+end
+
+
+local function set_srv_status(skey, srv, failed)
+    local server_status = cluster_status[skey]
+    if not server_status then
+        server_status = {}
+        cluster_status[skey] = server_status
+    end
+
+    -- The default max_fails is 0, which differs from nginx upstream module(1).
+    local max_fails = srv.max_fails or 0
+    local fail_timeout = srv.fail_timeout or 10
+    if max_fails == 0 then  -- disables the accounting of attempts
+        return
+    end
+
+    local time_now = now()
+    local srv_key = str_format("%s:%d", srv.host, srv.port)
+    local srv_status = server_status[srv_key]
+    if not srv_status then  -- first set
+        srv_status = {
+            status = _M.STATUS_OK,
+            failed_count = 0,
+            lastmodify = time_now
+        }
+        server_status[srv_key] = srv_status
+    elseif srv_status.lastmodify + fail_timeout < time_now then -- srv_status expired
+        srv_status.status = _M.STATUS_OK
+        srv_status.failed_count = 0
+        srv_status.lastmodify = time_now
+    end
+
+    if failed then
+        srv_status.failed_count = srv_status.failed_count + 1
+
+        if srv_status.failed_count >= max_fails then
+            local ups = upstream.checkups[skey]
+            for level, cls in pairs(ups.cluster) do
+                for _, s in ipairs(cls.servers) do
+                    local k = str_format("%s:%d", s.host, s.port)
+                    local st = server_status[k]
+                    -- not the last ok server
+                    if not st or st.status == _M.STATUS_OK and k ~= srv_key then
+                        srv_status.status = _M.STATUS_ERR
+                        return
+                    end
+                end
+            end
+        end
+    end
 end
 
 
@@ -344,7 +415,8 @@ end
 
 
 local try_servers_round_robin = function(ckey, cls, verify_server_status, callback, opts)
-    local try, check_res, check_opts, srv_flag = opts.try, opts.check_res, opts.check_opts, opts.srv_flag
+    local try, check_res, check_opts, srv_flag, skey =
+        opts.try, opts.check_res, opts.check_opts, opts.srv_flag, opts.skey
     local args = opts.args or {}
 
     if not check_res then
@@ -376,6 +448,8 @@ local try_servers_round_robin = function(ckey, cls, verify_server_status, callba
                     _M.reset_round_robin_state(cls)
                 end
                 return res
+            elseif skey then
+                set_srv_status(skey, srv, true)
             end
 
             if srv.effective_weight > 1 then
@@ -410,13 +484,21 @@ local function try_cluster_round_robin(skey, ups, cls, callback, args, try_again
     local verify_server_status = function(srv)
         local peer_key = _gen_key(skey, srv)
         local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX .. peer_key))
-        if peer_status == nil or peer_status.status ~= _M.STATUS_ERR then
+        if (peer_status == nil or peer_status.status ~= _M.STATUS_ERR)
+            and get_srv_status(skey, srv) == _M.STATUS_OK then
             return true
         end
         return
     end
 
-    local opts = { try = try, check_res = check_res, check_opts = ups, srv_flag = true, args = args }
+    local opts = {
+        try = try,
+        check_res = check_res,
+        check_opts = ups,
+        srv_flag = true,
+        args = args,
+        skey = skey,
+    }
     local res, try, err = try_servers_round_robin(nil, cls, verify_server_status, callback, opts)
     if res then
         return res
@@ -1020,7 +1102,13 @@ local function extract_servers_from_upstream(skey, cls)
         end
         peer_id_dict[_gen_key(skey, { host = host, port = port })] = {
             id = srv.id, backup = ups_backup and true or false}
-        tab_insert(cls.servers, { host=host, port=port, weight=srv.weight })
+        tab_insert(cls.servers, {
+            host = host,
+            port = port,
+            weight = srv.weight,
+            max_fails = srv.max_fails,
+            fail_timeout = srv.fail_timeout,
+        })
     end
 end
 
