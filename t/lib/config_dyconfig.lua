@@ -5,7 +5,6 @@ _M.global = {
     checkup_timer_interval = 5,
     checkup_timer_overtime = 10,
     checkup_shd_sync_enable = true,
-    shd_config_prefix = "shd_v2",
     shd_config_timer_interval = 0.5,
 }
 

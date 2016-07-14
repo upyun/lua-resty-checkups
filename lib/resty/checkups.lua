@@ -42,7 +42,8 @@ local CHECKUP_TIMER_KEY = "checkups:timer"
 local CHECKUP_LAST_CHECK_TIME_KEY = "checkups:last_check_time"
 local CHECKUP_TIMER_ALIVE_KEY = "checkups:timer_alive"
 local SHD_CONFIG_VERSTION_KEY = "config_version"
-local SKEYS_KEY = "checkups:skeys:v1"
+local SKEYS_KEY = "checkups:skeys"
+local SHD_CONFIG_PREFIX = "shd_config"
 
 local PEER_STATUS_PREFIX = "checkups:peer_status:"
 
@@ -188,7 +189,7 @@ end
 
 
 local function _gen_shd_key(skey)
-    return str_format("%s:%s", upstream.shd_config_prefix, skey)
+    return str_format("%s:%s", SHD_CONFIG_PREFIX, skey)
 end
 
 
@@ -1221,7 +1222,6 @@ function _M.prepare_checker(config)
     upstream.ups_status_timer_interval = config.global.ups_status_timer_interval
         or 5
     upstream.checkup_shd_sync_enable = config.global.checkup_shd_sync_enable
-    upstream.shd_config_prefix = config.global.shd_config_prefix or "shd_config"
     upstream.shd_config_timer_interval = config.global.shd_config_timer_interval
         or upstream.checkup_timer_interval
     upstream.default_heartbeat_enable = config.global.default_heartbeat_enable
@@ -1260,11 +1260,8 @@ function _M.prepare_checker(config)
         local phase = get_phase()
         -- if in init_worker phase, only worker 0 can update shm
         if phase == "init" or phase == "init_worker" and worker_id() == 0 then
-            local shd_config_version, err = shd_config:get(SHD_CONFIG_VERSTION_KEY)
-            if not shd_config_version and not err then
-                shd_config:set(SHD_CONFIG_VERSTION_KEY, 0)
-                shd_config:set(SKEYS_KEY, cjson.encode(skeys))
-            end
+            shd_config:set(SHD_CONFIG_VERSTION_KEY, 0)
+            shd_config:set(SKEYS_KEY, cjson.encode(skeys))
         end
         upstream.shd_config_version = 0
     end
@@ -1378,11 +1375,12 @@ function _M.update_upstream(skey, upstream)
     end
 
     local skeys = shd_config:get(SKEYS_KEY)
-    if skeys then
-        skeys = cjson.decode(skeys)
-    else
-        skeys = {}
+    if not skeys then
+        release_lock(lock)
+        return false, "no skeys found from shm"
     end
+
+    skeys = cjson.decode(skeys)
 
     new_ver, err = shd_config:incr(SHD_CONFIG_VERSTION_KEY, 1)
     if err then
