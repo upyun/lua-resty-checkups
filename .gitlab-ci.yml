@@ -10,3 +10,5 @@ before_script:
 test:
     script:
         - make test
+    tags:
+        - offline-test
