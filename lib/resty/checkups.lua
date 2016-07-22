@@ -1,5 +1,5 @@
--- Copyright (C) 2014 Jing Ye (yejingx), UPYUN Inc.
--- Copyright (C) 2014 Monkey Zhang (timebug), UPYUN Inc.
+-- Copyright (C) 2014-2016 UPYUN, Inc.
+
 local api = require "resty.checkups.api"
 local round_robin = require "resty.checkups.round_robin"
 

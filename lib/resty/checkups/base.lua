@@ -1,3 +1,5 @@
+-- Copyright (C) 2014-2016 UPYUN, Inc.
+
 local cjson         = require "cjson.safe"
 
 local lock          = require "resty.lock"
@@ -52,6 +54,23 @@ local ups_status_timer_created
 _M.ups_status_timer_created = ups_status_timer_created
 local cluster_status = {}
 _M.cluster_status = cluster_status
+
+
+local function _gen_key(skey, srv)
+    return str_format("%s:%s:%d", skey, srv.host, srv.port)
+end
+_M._gen_key = _gen_key
+
+
+local function extract_srv_host_port(name)
+    local m = re_match(name, [[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)(?::([0-9]+))?]], "jo")
+    if not m then
+        return
+    end
+
+    local host, port = m[1], m[2] or 80
+    return host, port
+end
 
 
 function _M.get_srv_status(skey, srv)
@@ -120,23 +139,6 @@ function _M.set_srv_status(skey, srv, failed)
             end
         end
     end
-end
-
-
-local function _gen_key(skey, srv)
-    return str_format("%s:%s:%d", skey, srv.host, srv.port)
-end
-_M._gen_key = _gen_key
-
-
-local function extract_srv_host_port(name)
-    local m = re_match(name, [[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)(?::([0-9]+))?]], "jo")
-    if not m then
-        return
-    end
-
-    local host, port = m[1], m[2] or 80
-    return host, port
 end
 
 

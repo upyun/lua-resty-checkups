@@ -1,3 +1,5 @@
+-- Copyright (C) 2014-2016 UPYUN, Inc.
+
 local cjson = require "cjson.safe"
 
 local floor = math.floor
@@ -56,5 +58,6 @@ function _M.try_cluster_consistent_hash(skey, ups, cls, callback, args, hash_key
     -- continue to next level
     return nil, true, err
 end
+
 
 return _M

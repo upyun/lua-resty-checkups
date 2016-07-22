@@ -1,3 +1,5 @@
+-- Copyright (C) 2014-2016 UPYUN, Inc.
+
 local cjson         = require "cjson.safe"
 
 local lock          = require "resty.lock"

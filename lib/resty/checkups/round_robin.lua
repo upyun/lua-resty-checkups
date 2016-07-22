@@ -1,3 +1,5 @@
+-- Copyright (C) 2014-2016 UPYUN, Inc.
+
 local cjson      = require "cjson.safe"
 
 local str_format = string.format
@@ -153,6 +155,31 @@ local try_servers_round_robin = function(ckey, cls, verify_server_status, callba
 end
 
 
+local function calc_gcd_weight(servers)
+    -- calculate the GCD, maximum weight and weight sum value from a set of servers
+    local gcd, max_weight, weight_sum = 0, 0, 0
+
+    for _, srv in ipairs(servers) do
+        if not srv.weight or type(srv.weight) ~= "number" or srv.weight < 1 then
+            srv.weight = 1
+        end
+
+        if not srv.effective_weight then
+            srv.effective_weight = srv.weight
+        end
+
+        if srv.effective_weight > max_weight then
+            max_weight = srv.effective_weight
+        end
+
+        weight_sum = weight_sum + srv.effective_weight
+        gcd = _gcd(srv.effective_weight, gcd)
+    end
+
+    return gcd, max_weight, weight_sum
+end
+
+
 function _M.try_cluster_round_robin_(skey, ups, cls, callback, args, try_again)
     local base = require "resty.checkups.base"
 
@@ -194,31 +221,6 @@ function _M.try_cluster_round_robin_(skey, ups, cls, callback, args, try_again)
     end
 
     return nil, nil, err
-end
-
-
-local function calc_gcd_weight(servers)
-    -- calculate the GCD, maximum weight and weight sum value from a set of servers
-    local gcd, max_weight, weight_sum = 0, 0, 0
-
-    for _, srv in ipairs(servers) do
-        if not srv.weight or type(srv.weight) ~= "number" or srv.weight < 1 then
-            srv.weight = 1
-        end
-
-        if not srv.effective_weight then
-            srv.effective_weight = srv.weight
-        end
-
-        if srv.effective_weight > max_weight then
-            max_weight = srv.effective_weight
-        end
-
-        weight_sum = weight_sum + srv.effective_weight
-        gcd = _gcd(srv.effective_weight, gcd)
-    end
-
-    return gcd, max_weight, weight_sum
 end
 
 

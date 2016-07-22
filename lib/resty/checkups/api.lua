@@ -1,5 +1,4 @@
--- Copyright (C) 2014 Jing Ye (yejingx), UPYUN Inc.
--- Copyright (C) 2014 Monkey Zhang (timebug), UPYUN Inc.
+-- Copyright (C) 2014-2016 UPYUN, Inc.
 
 local cjson      = require "cjson.safe"
 
