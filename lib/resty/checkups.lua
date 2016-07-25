@@ -1045,7 +1045,7 @@ local function shd_config_syncer(premature)
             for skey, _ in pairs(skeys) do
                 local shd_servers, err = shd_config:get(_gen_shd_key(skey))
 
-                log(ngx.INFO, "get ", skey, " from shm: ", shd_servers)
+                log(INFO, "get ", skey, " from shm: ", shd_servers)
 
                 if shd_servers then
                     shd_servers = cjson.decode(shd_servers)
@@ -1344,12 +1344,49 @@ local function check_update_server_args(skey, level, server)
 end
 
 
+local function do_update_upstream(skey, upstream)
+    local skeys = shd_config:get(SKEYS_KEY)
+    if not skeys then
+        return false, "no skeys found from shm"
+    end
+
+    skeys = cjson.decode(skeys)
+
+    local new_ver, ok, err
+    new_ver, err = shd_config:incr(SHD_CONFIG_VERSTION_KEY, 1)
+    if err then
+        log(WARN, "failed to set new version to shm")
+        return false, err
+    end
+
+    local key = _gen_shd_key(skey)
+    ok, err = shd_config:set(key, cjson.encode(upstream))
+    if err then
+        log(WARN, "failed to set new upstream to shm")
+        return false, err
+    end
+
+    -- new skey
+    if not skeys[skey] then
+        skeys[skey] = 1
+        local _, err = shd_config:set(SKEYS_KEY, cjson.encode(skeys))
+        if err then
+            log(WARN, "failed to set new skeys to shm")
+            return false, err
+        end
+        log(INFO, "add new skey to upstreams, ", skey)
+    end
+
+    return true
+end
+
+
 function _M.update_upstream(skey, upstream)
     if not upstream or not next(upstream) then
         return false, "can not set empty upstream"
     end
 
-    local ok, err, new_ver
+    local ok, err
     for level, cls in pairs(upstream) do
         if not cls or not next(cls) then
             return false, "can not update empty level"
@@ -1375,60 +1412,19 @@ function _M.update_upstream(skey, upstream)
         return false, err
     end
 
-    local skeys = shd_config:get(SKEYS_KEY)
-    if not skeys then
-        release_lock(lock)
-        return false, "no skeys found from shm"
-    end
-
-    skeys = cjson.decode(skeys)
-
-    new_ver, err = shd_config:incr(SHD_CONFIG_VERSTION_KEY, 1)
-    if err then
-        log(WARN, "failed to set new version to shm")
-        release_lock(lock)
-        return false, err
-    end
-
-    local key = _gen_shd_key(skey)
-    ok, err = shd_config:set(key, cjson.encode(upstream))
-    if err then
-        log(WARN, "failed to set new upstream to shm")
-        release_lock(lock)
-        return false, err
-    end
-
-    -- new skey
-    if not skeys[skey] then
-        skeys[skey] = 1
-        local _, err = shd_config:set(SKEYS_KEY, cjson.encode(skeys))
-        if err then
-            log(WARN, "failed to set new skeys to shm")
-            release_lock(lock)
-            return false, err
-        end
-        log(INFO, "add new skey to upstreams, ", skey)
-    end
+    ok, err = do_update_upstream(skey, upstream)
 
     release_lock(lock)
 
-    return true
+    return ok, err
 end
 
 
-function _M.delete_upstream(skey)
-    local lock, err
-    lock, err = get_lock(SKEYS_KEY)
-    if not lock then
-        log(WARN, "failed to acquire the lock: ", err)
-        return false, err
-    end
-
+local function do_delete_upstream(skey)
     local skeys = shd_config:get(SKEYS_KEY)
     if skeys then
         skeys = cjson.decode(skeys)
     else
-        release_lock(lock)
         return false, "upstream " .. skey .. " not found"
     end
 
@@ -1439,14 +1435,12 @@ function _M.delete_upstream(skey)
         new_ver, err = shd_config:incr(SHD_CONFIG_VERSTION_KEY, 1)
         if err then
             log(WARN, "failed to set new version to shm")
-            release_lock(lock)
             return false, err
         end
 
         ok, err = shd_config:delete(key)
         if err then
             log(WARN, "failed to set new servers to shm")
-            release_lock(lock)
             return false, err
         end
 
@@ -1455,21 +1449,32 @@ function _M.delete_upstream(skey)
         local _, err = shd_config:set(SKEYS_KEY, cjson.encode(skeys))
         if err then
             log(WARN, "failed to set new skeys to shm")
-            release_lock(lock)
             return false, err
         end
         log(INFO, "delete skey from upstreams, ", skey)
     elseif err then
-        release_lock(lock)
         return false, err
     else
-        release_lock(lock)
         return false, "upstream " .. skey .. " not found"
     end
 
+    return true
+end
+
+
+function _M.delete_upstream(skey)
+    local lock, ok, err
+    lock, err = get_lock(SKEYS_KEY)
+    if not lock then
+        log(WARN, "failed to acquire the lock: ", err)
+        return false, err
+    end
+
+    ok, err = do_delete_upstream(skey)
+
     release_lock(lock)
 
-    return true
+    return ok, err
 end
 
 
