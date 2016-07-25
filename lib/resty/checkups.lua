@@ -27,6 +27,7 @@ local state     = ngx.shared.state
 local shd_config= ngx.shared.config
 local log       = ngx.log
 local now       = ngx.now
+local update_time = ngx.update_time
 
 local INFO = ngx.INFO
 local ERR  = ngx.ERR
@@ -971,7 +972,7 @@ end
 local function active_checkup(premature)
     local ckey = CHECKUP_TIMER_KEY
 
-    ngx.update_time() -- flush cache time
+    update_time() -- flush cache time
 
     if premature then
         local ok, err = mutex:set(ckey, nil)
@@ -1010,7 +1011,7 @@ end
 
 local function shd_config_syncer(premature)
     local ckey = CHECKUP_TIMER_KEY .. ":shd_config:" .. worker_id()
-    ngx.update_time()
+    update_time()
 
     if premature then
         local ok, err = mutex:set(ckey, nil)
