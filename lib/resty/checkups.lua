@@ -15,6 +15,8 @@ local tab_concat = table.concat
 local tab_insert = table.insert
 local unpack     = unpack
 
+local get_phase = ngx.get_phase
+local worker_id = ngx.worker.id
 local tcp       = ngx.socket.tcp
 local localtime = ngx.localtime
 local re_find   = ngx.re.find
@@ -22,9 +24,12 @@ local re_match  = ngx.re.match
 local re_gmatch = ngx.re.gmatch
 local mutex     = ngx.shared.mutex
 local state     = ngx.shared.state
+local shd_config= ngx.shared.config
 local log       = ngx.log
 local now       = ngx.now
+local update_time = ngx.update_time
 
+local INFO = ngx.INFO
 local ERR  = ngx.ERR
 local WARN = ngx.WARN
 
@@ -37,6 +42,9 @@ local _M = { _VERSION = "0.11",
 local CHECKUP_TIMER_KEY = "checkups:timer"
 local CHECKUP_LAST_CHECK_TIME_KEY = "checkups:last_check_time"
 local CHECKUP_TIMER_ALIVE_KEY = "checkups:timer_alive"
+local SHD_CONFIG_VERSTION_KEY = "config_version"
+local SKEYS_KEY = "checkups:skeys"
+local SHD_CONFIG_PREFIX = "shd_config"
 
 local PEER_STATUS_PREFIX = "checkups:peer_status:"
 
@@ -63,6 +71,22 @@ local function release_lock(lock)
     if not ok then
         log(WARN, "failed to unlock: ", err)
     end
+end
+
+
+local function table_dup(ori_tab)
+    if type(ori_tab) ~= "table" then
+        return ori_tab
+    end
+    local new_tab = {}
+    for k, v in pairs(ori_tab) do
+        if type(v) == "table" then
+            new_tab[k] = table_dup(v)
+        else
+            new_tab[k] = v
+        end
+    end
+    return new_tab
 end
 
 
@@ -162,6 +186,11 @@ end
 
 local function _gen_key(skey, srv)
     return str_format("%s:%s:%d", skey, srv.host, srv.port)
+end
+
+
+local function _gen_shd_key(skey)
+    return str_format("%s:%s", SHD_CONFIG_PREFIX, skey)
 end
 
 
@@ -597,7 +626,6 @@ function _M.ready_ok(skey, callback, opts)
                     return res, err
                 end
 
-
                 -- continue to next key?
                 if not cont then break end
 
@@ -864,7 +892,8 @@ local heartbeat = {
 
 local function cluster_heartbeat(skey)
     local ups = upstream.checkups[skey]
-    if ups.enable == false then
+    if ups.enable == false or (ups.enable == nil and
+        upstream.default_heartbeat_enable == false) then
         return
     end
 
@@ -970,7 +999,7 @@ end
 local function active_checkup(premature)
     local ckey = CHECKUP_TIMER_KEY
 
-    ngx.update_time() -- flush cache time
+    update_time() -- flush cache time
 
     if premature then
         local ok, err = mutex:set(ckey, nil)
@@ -996,6 +1025,93 @@ local function active_checkup(premature)
     end
 
     local ok, err = ngx.timer.at(interval, active_checkup)
+    if not ok then
+        log(WARN, "failed to create timer: ", err)
+        local ok, err = mutex:set(ckey, nil)
+        if not ok then
+            log(WARN, "failed to update shm: ", err)
+        end
+        return
+    end
+end
+
+
+local function shd_config_syncer(premature)
+    local ckey = CHECKUP_TIMER_KEY .. ":shd_config:" .. worker_id()
+    update_time()
+
+    if premature then
+        local ok, err = mutex:set(ckey, nil)
+        if not ok then
+            log(WARN, "failed to update shm: ", err)
+        end
+        return
+    end
+
+    local lock, err = get_lock(SKEYS_KEY)
+    if not lock then
+        log(WARN, "failed to acquire the lock: ", err)
+        return
+    end
+
+    local config_version, err = shd_config:get(SHD_CONFIG_VERSTION_KEY)
+
+    if config_version and config_version > upstream.shd_config_version then
+        local skeys = shd_config:get(SKEYS_KEY)
+        if skeys then
+            skeys = cjson.decode(skeys)
+
+            -- delete skey from upstream
+            for skey, _ in pairs(upstream.checkups) do
+                if not skeys[skey] then
+                    upstream.checkups[skey] = nil
+                end
+            end
+
+            local success = true
+            for skey, _ in pairs(skeys) do
+                local shd_servers, err = shd_config:get(_gen_shd_key(skey))
+
+                log(INFO, "get ", skey, " from shm: ", shd_servers)
+
+                if shd_servers then
+                    shd_servers = cjson.decode(shd_servers)
+                    -- add new skey
+                    if not upstream.checkups[skey] then
+                        upstream.checkups[skey] = {}
+                    end
+
+                    upstream.checkups[skey].cluster = table_dup(shd_servers)
+
+                    local ups = upstream.checkups[skey].cluster
+                    -- only reset for rr cluster
+                    for level, cls in ipairs(ups) do
+                        _M.reset_round_robin_state(cls)
+                    end
+                elseif err then
+                    success = false
+                    log(WARN, "failed to get from shm: ", err)
+                end
+            end
+
+            if success then
+                upstream.shd_config_version = config_version
+            end
+        end
+    elseif err then
+        log(WARN, "failed to get config version from shm")
+    end
+
+    release_lock(lock)
+
+    local interval = upstream.shd_config_timer_interval
+    local overtime = upstream.checkup_timer_overtime
+    local ok, err = mutex:set(ckey, 1, overtime)
+    if not ok then
+        log(WARN, "failed to update shm: ", err)
+    end
+
+    local ok, err = ngx.timer.at(interval, shd_config_syncer)
     if not ok then
         log(WARN, "failed to create timer: ", err)
         local ok, err = mutex:set(ckey, nil)
@@ -1077,22 +1193,6 @@ local function ups_status_checker(premature)
 end
 
 
-local function table_dup(ori_tab)
-    if type(ori_tab) ~= "table" then
-        return ori_tab
-    end
-    local new_tab = {}
-    for k, v in pairs(ori_tab) do
-        if type(v) == "table" then
-            new_tab[k] = table_dup(v)
-        else
-            new_tab[k] = v
-        end
-    end
-    return new_tab
-end
-
-
 local function extract_servers_from_upstream(skey, cls)
     local up_key = cls.upstream
     if not up_key then
@@ -1149,15 +1249,49 @@ function _M.prepare_checker(config)
     upstream.ups_status_sync_enable = config.global.ups_status_sync_enable
     upstream.ups_status_timer_interval = config.global.ups_status_timer_interval
         or 5
+    upstream.checkup_shd_sync_enable = config.global.checkup_shd_sync_enable
+    upstream.shd_config_timer_interval = config.global.shd_config_timer_interval
+        or upstream.checkup_timer_interval
+    upstream.default_heartbeat_enable = config.global.default_heartbeat_enable
 
+    local skeys = {}
     for skey, ups in pairs(config) do
         if type(ups) == "table" and type(ups.cluster) == "table" then
             upstream.checkups[skey] = table_dup(ups)
+
             for level, cls in pairs(upstream.checkups[skey].cluster) do
                 extract_servers_from_upstream(skey, cls)
                 _M.reset_round_robin_state(cls)
             end
+
+            if upstream.checkup_shd_sync_enable then
+                if shd_config and worker_id then
+                    local phase = get_phase()
+                    -- if in init_worker phase, only worker 0 can update shm
+                    if phase == "init" or
+                        phase == "init_worker" and worker_id() == 0 then
+                        local key = _gen_shd_key(skey)
+                        shd_config:set(key, cjson.encode(upstream.checkups[skey].cluster))
+                    end
+
+                    skeys[skey] = 1
+                else
+                    log(ERR, "checkup_shd_sync_enable is true but " ..
+                        "no shd_config nor worker_id found.")
+                end
+            end
         end
+    end
+
+    if upstream.checkup_shd_sync_enable and
+        shd_config and worker_id then
+        local phase = get_phase()
+        -- if in init_worker phase, only worker 0 can update shm
+        if phase == "init" or phase == "init_worker" and worker_id() == 0 then
+            shd_config:set(SHD_CONFIG_VERSTION_KEY, 0)
+            shd_config:set(SKEYS_KEY, cjson.encode(skeys))
+        end
+        upstream.shd_config_version = 0
     end
 
     upstream.initialized = true
@@ -1166,7 +1300,7 @@ end
 
 local function get_upstream_status(skey)
     local ups = upstream.checkups[skey]
-    if not ups or ups.enable == false then
+    if not ups then
         return
     end
 
@@ -1181,13 +1315,18 @@ local function get_upstream_status(skey)
                 local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX ..
                                                            peer_key)) or {}
                 peer_status.server = peer_key
-                if not peer_status.status or
-                    peer_status.status == _M.STATUS_OK then
-                    peer_status.status = "ok"
-                elseif peer_status.status == _M.STATUS_ERR then
-                    peer_status.status = "err"
+                if ups.enable == false or (ups.enable == nil and
+                    upstream.default_heartbeat_enable == false) then
+                    peer_status.status = "unchecked"
                 else
-                    peer_status.status = "unstable"
+                    if not peer_status.status or
+                        peer_status.status == _M.STATUS_OK then
+                        peer_status.status = "ok"
+                    elseif peer_status.status == _M.STATUS_ERR then
+                        peer_status.status = "err"
+                    else
+                        peer_status.status = "unstable"
+                    end
                 end
                 tab_insert(ups_status[level], peer_status)
             end
@@ -1208,8 +1347,161 @@ function _M.get_status()
     all_status.checkup_timer_alive = state:get(CHECKUP_TIMER_ALIVE_KEY) or false
     all_status.start_time = upstream.start_time
     all_status.conf_hash = upstream.conf_hash or cjson.null
+    all_status.shd_config_version = upstream.shd_config_version or cjson.null
 
     return all_status
+end
+
+
+local function check_update_server_args(skey, level, server)
+    if type(skey) ~= "string" then
+        return false, "skey must be a string"
+    end
+    if type(level) ~= "number" and type(level) ~= "string" then
+        return false, "level must be string or number"
+    end
+    if type(server) ~= "table" then
+        return false, "server must be a table"
+    end
+    if not server.host or not server.port then
+        return false, "no server.host nor server.port found"
+    end
+
+    return true
+end
+
+
+local function do_update_upstream(skey, upstream)
+    local skeys = shd_config:get(SKEYS_KEY)
+    if not skeys then
+        return false, "no skeys found from shm"
+    end
+
+    skeys = cjson.decode(skeys)
+
+    local new_ver, ok, err
+    new_ver, err = shd_config:incr(SHD_CONFIG_VERSTION_KEY, 1)
+    if err then
+        log(WARN, "failed to set new version to shm")
+        return false, err
+    end
+
+    local key = _gen_shd_key(skey)
+    ok, err = shd_config:set(key, cjson.encode(upstream))
+    if err then
+        log(WARN, "failed to set new upstream to shm")
+        return false, err
+    end
+
+    -- new skey
+    if not skeys[skey] then
+        skeys[skey] = 1
+        local _, err = shd_config:set(SKEYS_KEY, cjson.encode(skeys))
+        if err then
+            log(WARN, "failed to set new skeys to shm")
+            return false, err
+        end
+        log(INFO, "add new skey to upstreams, ", skey)
+    end
+
+    return true
+end
+
+
+function _M.update_upstream(skey, upstream)
+    if not upstream or not next(upstream) then
+        return false, "can not set empty upstream"
+    end
+
+    local ok, err
+    for level, cls in pairs(upstream) do
+        if not cls or not next(cls) then
+            return false, "can not update empty level"
+        end
+
+        local servers = cls.servers
+        if not servers or not next(servers) then
+            return false, "can not update empty servers"
+        end
+
+        for _, srv in ipairs(servers) do
+            ok, err = check_update_server_args(skey, level, srv)
+            if not ok then
+                return false, err
+            end
+        end
+    end
+
+    local lock
+    lock, err = get_lock(SKEYS_KEY)
+    if not lock then
+        log(WARN, "failed to acquire the lock: ", err)
+        return false, err
+    end
+
+    ok, err = do_update_upstream(skey, upstream)
+
+    release_lock(lock)
+
+    return ok, err
+end
+
+
+local function do_delete_upstream(skey)
+    local skeys = shd_config:get(SKEYS_KEY)
+    if skeys then
+        skeys = cjson.decode(skeys)
+    else
+        return false, "upstream " .. skey .. " not found"
+    end
+
+    local key = _gen_shd_key(skey)
+    local shd_servers, err = shd_config:get(key)
+    if shd_servers then
+        local new_ver, ok, err
+        new_ver, err = shd_config:incr(SHD_CONFIG_VERSTION_KEY, 1)
+        if err then
+            log(WARN, "failed to set new version to shm")
+            return false, err
+        end
+
+        ok, err = shd_config:delete(key)
+        if err then
+            log(WARN, "failed to set new servers to shm")
+            return false, err
+        end
+
+        skeys[skey] = nil
+
+        local _, err = shd_config:set(SKEYS_KEY, cjson.encode(skeys))
+        if err then
+            log(WARN, "failed to set new skeys to shm")
+            return false, err
+        end
+        log(INFO, "delete skey from upstreams, ", skey)
+    elseif err then
+        return false, err
+    else
+        return false, "upstream " .. skey .. " not found"
+    end
+
+    return true
+end
+
+
+function _M.delete_upstream(skey)
+    local lock, ok, err
+    lock, err = get_lock(SKEYS_KEY)
+    if not lock then
+        log(WARN, "failed to acquire the lock: ", err)
+        return false, err
+    end
+
+    ok, err = do_delete_upstream(skey)
+
+    release_lock(lock)
+
+    return ok, err
 end
 
 
@@ -1228,7 +1520,43 @@ function _M.get_ups_timeout(skey)
 end
 
 
+local function create_shd_config_syncer()
+    local ckey = CHECKUP_TIMER_KEY .. ":shd_config:" .. worker_id()
+    local val, err = mutex:get(ckey)
+    if val then
+        return
+    end
+
+    if err then
+        log(WARN, "failed to get key from shm: ", err)
+        return
+    end
+
+    local ok, err = ngx.timer.at(0, shd_config_syncer)
+    if not ok then
+        log(WARN, "failed to create shd_config timer: ", err)
+        return
+    end
+
+    local overtime = upstream.checkup_timer_overtime
+    local ok, err = mutex:set(ckey, 1, overtime)
+    if not ok then
+        log(WARN, "failed to update shm: ", err)
+    end
+end
+
+
 function _M.create_checker()
+    if not upstream.initialized then
+        log(ERR, "create checker failed, call prepare_checker in init_by_lua")
+        return
+    end
+
+    -- shd config syncer enabled
+    if upstream.shd_config_version then
+        create_shd_config_syncer()
+    end
+
     local ckey = CHECKUP_TIMER_KEY
     local val, err = mutex:get(ckey)
     if val then
@@ -1240,12 +1568,7 @@ function _M.create_checker()
         return
     end
 
-    if not upstream.initialized then
-        log(ERR, "create checker failed, call prepare_checker in init_by_lua")
-        return
-    end
-
-    local lock = get_lock(ckey)
+    local lock, err = get_lock(ckey)
     if not lock then
         log(WARN, "failed to acquire the lock: ", err)
         return
