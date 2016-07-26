@@ -663,6 +663,13 @@ function _M.ready_ok(skey, callback, opts)
 end
 
 
+function _M.select_peer(skey)
+    return _M.ready_ok(skey, function(host, port)
+        return { host=host, port=port }
+    end)
+end
+
+
 local heartbeat = {
     general = function (host, port, ups)
         local id = host .. ':' .. port
