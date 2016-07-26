@@ -25,8 +25,8 @@ local re_match      = ngx.re.match
 local re_gmatch     = ngx.re.gmatch
 local mutex         = ngx.shared.mutex
 local state         = ngx.shared.state
+local shd_config    = ngx.shared.config
 local now           = ngx.now
-local update_time   = ngx.update_time
 
 
 local _M = {
@@ -44,6 +44,12 @@ local CHECKUP_TIMER_ALIVE_KEY = "checkups:timer_alive"
 _M.CHECKUP_TIMER_ALIVE_KEY = CHECKUP_TIMER_ALIVE_KEY
 local PEER_STATUS_PREFIX = "checkups:peer_status:"
 _M.PEER_STATUS_PREFIX = PEER_STATUS_PREFIX
+local SHD_CONFIG_VERSION_KEY = "config_version"
+_M.SHD_CONFIG_VERSION_KEY = SHD_CONFIG_VERSION_KEY
+local SKEYS_KEY = "checkups:skeys"
+_M.SKEYS_KEY = SKEYS_KEY
+local SHD_CONFIG_PREFIX = "shd_config"
+_M.SHD_CONFIG_PREFIX = SHD_CONFIG_PREFIX
 
 
 local upstream = {}
@@ -203,7 +209,7 @@ end
 
 function _M.get_upstream_status(skey)
     local ups = upstream.checkups[skey]
-    if not ups or ups.enable == false then
+    if not ups then
         return
     end
 
@@ -218,13 +224,18 @@ function _M.get_upstream_status(skey)
                 local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX ..
                                                            peer_key)) or {}
                 peer_status.server = peer_key
-                if not peer_status.status or
-                    peer_status.status == _M.STATUS_OK then
-                    peer_status.status = "ok"
-                elseif peer_status.status == _M.STATUS_ERR then
-                    peer_status.status = "err"
+                if ups.enable == false or (ups.enable == nil and
+                   upstream.default_heartbeat_enable == false) then
+                    peer_status.status = "unchecked"
                 else
-                    peer_status.status = "unstable"
+                    if not peer_status.status or
+                       peer_status.status == _M.STATUS_OK then
+                        peer_status.status = "ok"
+                    elseif peer_status.status == _M.STATUS_ERR then
+                        peer_status.status = "err"
+                    else
+                        peer_status.status = "unstable"
+                    end
                 end
                 tab_insert(ups_status[level], peer_status)
             end

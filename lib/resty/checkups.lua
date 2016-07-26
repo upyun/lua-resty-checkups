@@ -4,6 +4,8 @@ local api = require "resty.checkups.api"
 local round_robin = require "resty.checkups.round_robin"
 
 local _M = api
+_M._VERSION = "0.11"
+
 _M.reset_round_robin_state = api.reset_round_robin_state
 _M.feedback_status         = api.feedback_status
 _M.ready_ok                = api.ready_ok

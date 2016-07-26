@@ -326,7 +326,8 @@ local heartbeat = {
 
 local function cluster_heartbeat(skey)
     local ups = base.upstream.checkups[skey]
-    if ups.enable == false then
+    if ups.enable == false or (ups.enable == nil and
+        base.upstream.default_heartbeat_enable == false) then
         return
     end
 
