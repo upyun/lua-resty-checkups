@@ -1322,6 +1322,9 @@ local function get_upstream_status(skey)
                 local peer_status = cjson.decode(state:get(PEER_STATUS_PREFIX ..
                                                            peer_key)) or {}
                 peer_status.server = peer_key
+                peer_status["weight"] = srv.weight
+                peer_status["max_fails"] = srv.max_fails
+                peer_status["fail_timeout"] = srv.fail_timeout
                 if ups.enable == false or (ups.enable == nil and
                     upstream.default_heartbeat_enable == false) then
                     peer_status.status = "unchecked"
