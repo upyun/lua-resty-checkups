@@ -24,11 +24,12 @@ local get_phase  = ngx.get_phase
 
 
 local _M = {
-    _VERSION = "0.11",
+    _VERSION = "0.20",
     STATUS_OK = base.STATUS_OK, STATUS_UNSTABLE = base.STATUS_UNSTABLE, STATUS_ERR = base.STATUS_ERR
 }
 
 _M.reset_round_robin_state = round_robin.reset_round_robin_state
+_M.try_cluster_round_robin = round_robin.try_cluster_round_robin
 
 
 local function try_cluster(skey, ups, cls, callback, opts, try_again)
