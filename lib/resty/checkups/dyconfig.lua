@@ -110,6 +110,7 @@ local function shd_config_syncer(premature)
         return
     end
 end
+
 _M.shd_config_syncer = shd_config_syncer
 
 
@@ -129,6 +130,7 @@ function _M.check_update_server_args(skey, level, server)
 
     return true
 end
+
 
 function _M.do_update_upstream(skey, upstream)
     local skeys = shd_config:get(base.SKEYS_KEY)
@@ -168,6 +170,7 @@ function _M.do_update_upstream(skey, upstream)
 
     return true
 end
+
 
 function _M.do_delete_upstream(skey)
     local skeys = shd_config:get(base.SKEYS_KEY)
@@ -237,5 +240,6 @@ function _M.create_shd_config_syncer()
         log(WARN, "failed to update shm: ", err)
     end
 end
+
 
 return _M
