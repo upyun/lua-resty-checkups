@@ -46,7 +46,7 @@ local function shd_config_syncer(premature)
 
     local config_version, err = shd_config:get(base.SHD_CONFIG_VERSION_KEY)
 
-    if config_version and config_version > base.upstream.shd_config_version then
+    if config_version and config_version ~= base.upstream.shd_config_version then
         local skeys = shd_config:get(base.SKEYS_KEY)
         if skeys then
             skeys = cjson.decode(skeys)
