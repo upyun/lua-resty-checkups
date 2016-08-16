@@ -295,7 +295,7 @@ to make checkups trying on the order of `dc1`, `dc2`. If you haven't passed `opt
 	* `max_fails`: Sets the number of unsuccessful attempts to communicate with the server that should happen in the duration set by the `fail_timeout` parameter. By default, the number of unsuccessful attempts is set to `0`, which disables the accounting of attempts. What is considered an unsuccessful attempt is defined by `http_opts.statuses` if `typ="http"` or a `nil`/`false` return by [checkups.ready_ok](#ready_ok). 
 	* `fail_timeout`: Sets the time during which the specified number of unsuccessful attempts to communicate with the server should happen to consider the server unavailable and the period of time the server will be considered unavailable. By default, the parameter is set to `10` seconds.
 
-* `upstream`: Name of Nginx C upstream. Checkups will extract servers from Nginx C upstream module in [prepare_checker](#prepare-checker). [lua-upstream-nginx-module](https://github.com/openresty/lua-upstream-nginx-module) module is required.
+* `upstream`: Name of Nginx C upstream. Checkups will extract servers from Nginx C upstream module in [prepare_checker](#prepare_checker). [lua-upstream-nginx-module](https://github.com/openresty/lua-upstream-nginx-module) module is required.
 * `upstream_only_backup`: If set to `true`, checkups will only extract backup servers from Nginx C upstream module.
 
 
