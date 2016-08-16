@@ -288,11 +288,11 @@ return _M
 * `cluster`: You can configure multiple levels according to the cluster priority, at each level you can configure a `servers` cluster. Checkups will try next level only when all the servers in the prior level are consitered unavailable. 
 
 	In stead of trying clusters by level, you can also configure trying clusters by key(see `api` cluster above). Remember you should also pass argument like `opts.cluster_key={default="dc1", backup="dc2"}` to `checkups.read_ok`
-to make checkups trying on the order of `dc1`, `dc2`. If you haven't passed `opts.cluster_key` to `checkups.read_ok`, checkups will still try clusters by level. As for the above `api` cluster, checkups will eventually return `no upstream available`.
+to make checkups trying on the order of `dc1`, `dc2`. If you haven't passed `opts.cluster_key` to [checkups.ready_ok](#ready_ok), checkups will still try clusters by level. As for the above `api` cluster, checkups will eventually return `no upstream available`.
 * `try`: Retry count. Default is the number of servers.
 * `servers`: Configuration for `servers` are listed as follows,
 	* `weight`: Sets the weight of the server. Default is `1`.
-	* `max_fails`: Sets the number of unsuccessful attempts to communicate with the server that should happen in the duration set by the `fail_timeout` parameter. By default, the number of unsuccessful attempts is set to `0`, which disables the accounting of attempts. What is considered an unsuccessful attempt is defined by `http_opts.statuses` if `typ="http"` or a `nil`/`false` return by [checkups.ready_ok](#ready-ok). 
+	* `max_fails`: Sets the number of unsuccessful attempts to communicate with the server that should happen in the duration set by the `fail_timeout` parameter. By default, the number of unsuccessful attempts is set to `0`, which disables the accounting of attempts. What is considered an unsuccessful attempt is defined by `http_opts.statuses` if `typ="http"` or a `nil`/`false` return by [checkups.ready_ok](#ready_ok). 
 	* `fail_timeout`: Sets the time during which the specified number of unsuccessful attempts to communicate with the server should happen to consider the server unavailable and the period of time the server will be considered unavailable. By default, the parameter is set to `10` seconds.
 
 * `upstream`: Name of Nginx C upstream. Checkups will extract servers from Nginx C upstream module in [prepare_checker](#prepare-checker). [lua-upstream-nginx-module](https://github.com/openresty/lua-upstream-nginx-module) module is required.
