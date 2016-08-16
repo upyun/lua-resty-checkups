@@ -19,7 +19,7 @@ Features
 * Dynamic upstream update
 * Balance by weighted round-robin or hash
 * Sync with Nginx C upstream
-* Try clusters by level or by key
+* Try clusters by levels or by keys
 
 
 
@@ -165,10 +165,10 @@ Configuration
 Lua configuration
 -----------------
 
-Configuration file for checkups is a lua module consists of two parts, the global part and the cluster part. 
+Configuration file of checkups is a lua module consists of two parts, the global part and the cluster part. 
 
 
-An example configuration file for checkups is shown below.
+An example configuration file of checkups is shown below,
 
 
 ```
@@ -241,7 +241,7 @@ _M.api = {
     }
 }
 
-_M.nginx_api = {
+_M.ups_from_nginx = {
     timeout = 2,
 
     cluster = {
@@ -262,7 +262,7 @@ return _M
 
 * `checkup_timer_interval`: Interval of sending heartbeats to backend servers. Default is `5`.
 * `checkup_timer_overtime`: Interval of checkups to expire the timer key. In most cases, you don't need to change this value. Default is `60`.
-* `default_heartbeat_enable`: Checkups will sent heartbeat to servers by default or not. Default is `true`.
+* `default_heartbeat_enable`: Checkups will sent heartbeats to servers by default or not. Default is `true`.
 * `checkup_shd_sync_enable`: Create upstream syncer for each worker. If set to `false`, dynamic upstream will not work properly. Default is `true`.
 * `shd_config_timer_interval`: Interval of syncing upstream list from shared memory. Default is equal to `checkup_timer_interval`.
 * `ups_status_sync_enable`: If set to `true`, checkups will sync upstram status from checkups to Nginx C upstream module. Default is `false`.
@@ -270,10 +270,10 @@ return _M
 
 **Cluster configurations**
 
-* `enable`: Enable or disable heartbeat to servers. Default is `true`.
+* `enable`: Enable or disable heartbeats to servers. Default is `true`.
 * `typ`: Cluster type, must be one of `general`, `redis`, `mysql`, `http`. Default is `general`.
 	* `general`: Heartbeat by TCP `sock:connect`.
-	* `redis`: Heartbeat by redis `PING`, `PONG`. [lua-resty-redis](https://github.com/openresty/lua-resty-redis) module is required.
+	* `redis`: Heartbeat by redis `PING`. [lua-resty-redis](https://github.com/openresty/lua-resty-redis) module is required.
 	* `mysql`: Heartbeat by mysql `db:connect`. [lua-resty-mysql](https://github.com/openresty/lua-resty-mysql) module is required.
 	* `http`: Heartbeat by HTTP request. You can setup customized HTTP request and response codes in `http_opts`.
 * `timeout`: Connect timeout to upstream servers. Default is `5`.
@@ -285,10 +285,9 @@ return _M
 
 * `mode`: Balance mode. If set to `hash`, checkups will balance servers by `hash_key` or `ngx.req.uri` if no `hash_key` is specified. Default is `wrr`.
 * `protected`: If set to `true` and all the servers in the cluster are failing, checkups will not mark the last failing server as unavailable(`err`), instead, it will be marked as `unstable`(still available in next try). Default is `true`.
-* `cluster`: You can configure multiple levels according to the cluster priority, at each level you can configure a `servers` cluster. Checkups will try next level only when all the servers in the prior level are consitered unavailable. 
+* `cluster`: You can configure multiple levels according to the cluster priority, at each level you can configure a cluster of `servers`. Checkups will try next level only when all the servers in the prior level are consitered unavailable. 
 
-	In stead of trying clusters by level, you can also configure trying clusters by key(see `api` cluster above). Remember you should also pass argument like `opts.cluster_key={default="dc1", backup="dc2"}` to `checkups.read_ok`
-to make checkups trying on the order of `dc1`, `dc2`. If you haven't passed `opts.cluster_key` to [checkups.ready_ok](#ready_ok), checkups will still try clusters by level. As for the above `api` cluster, checkups will eventually return `no upstream available`.
+	Instead of trying clusters by level, you can configure checkups trying clusters by key(see `api` cluster above). Remember you should also pass extra argument like `opts.cluster_key={default="dc1", backup="dc2"}` to [checkups.read_ok](#ready_ok) to make checkups trying on the order of `dc1`, `dc2`. If you haven't passed `opts.cluster_key` to [checkups.ready_ok](#ready_ok), checkups will still try clusters by level. As for the above `api` cluster, checkups will eventually return `no upstream available`.
 * `try`: Retry count. Default is the number of servers.
 * `servers`: Configuration for `servers` are listed as follows,
 	* `weight`: Sets the weight of the server. Default is `1`.
@@ -336,9 +335,9 @@ ready_ok
 
 **syntax:** `res, err = ready_ok(skey, callback, opts?)`
 
-Select an available `peer` from cluster `skey` and call `callback(peer.host, peer.port)`.
+Select an available `peer` from cluster `skey` and call `callback(peer.host, peer.port, opts)`.
 
-The `opts` table accepts the following fields:
+The `opts` table accepts the following fields,
 
 * `cluster_key`: Try clusters by key. Checkups will try clusters on the order of `cluster_key.default`, `cluster_key.backup`.
 * `hash_key`: Key used in `hash` balance mode. If not set, `ngx.req.uri` will be used.
@@ -371,7 +370,7 @@ get_ups_timeout
 
 **syntax:** `connect_timeout, send_timeout, read_timeout = get_ups_timeout(skey)`
 
-Retuen timeout of cluster `skey`.
+Return timeout of cluster `skey`.
 
 
 feedback_status
