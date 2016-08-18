@@ -1,6 +1,8 @@
 lua-resty-checkups
 ==================
 
+[![Build Status](https://travis-ci.org/upyun/lua-resty-checkups.svg)](https://travis-ci.org/upyun/lua-resty-checkups)
+
 Manage Nginx upstreams in pure Lua.
 
 
