@@ -4,6 +4,8 @@ perl:
 cache:
     - apt
     - ccache
+services:
+    - redis-server
 env:
     - V_OPENRESTY=1.9.15.1
 install:
