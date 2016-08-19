@@ -82,15 +82,15 @@ __DATA__
                 return 1
             end
 
-            local ok, err = checkups.ready_ok("upyun", cb_ok, {cluster_key = {default="c1", backup="c2"}})
+            local ok, err = checkups.ready_ok("upyun", cb_ok, {cluster_key = {"c1", "c2"}})
             if err then
                 ngx.say(err)
             end
-            local ok, err = checkups.ready_ok("upyun", cb_ok, {cluster_key = {default="c1", backup="c2"}})
+            local ok, err = checkups.ready_ok("upyun", cb_ok, {cluster_key = {"c1", "c2"}})
             if err then
                 ngx.say(err)
             end
-            local ok, err = checkups.ready_ok("upyun", cb_ok, {cluster_key = {default="c1", backup="c2"}})
+            local ok, err = checkups.ready_ok("upyun", cb_ok, {cluster_key = {"c1", "c2"}})
             if err then
                 ngx.say(err)
             end
@@ -123,7 +123,7 @@ failed to receive status line from: 127.0.0.1:12357, timeout
                 return {status = 502}
             end
 
-            local ok, err  = checkups.ready_ok("upyun", cb, {cluster_key = {default="c1", backup="c2"}})
+            local ok, err  = checkups.ready_ok("upyun", cb, {cluster_key = {"c1", "c2"}})
             if err then
                 ngx.say(err)
             end
@@ -136,7 +136,7 @@ GET /t
 127.0.0.1:12356
 127.0.0.1:12356
 127.0.0.1:12354
-round robin: no servers available
+no servers available
 --- grep_error_log eval: qr/failed to connect: 127.0.0.1:\d+, connection refused|failed to receive status line from: 127.0.0.1:\d+, timeout/
 --- grep_error_log_out
 failed to receive status line from: 127.0.0.1:12357, timeout
@@ -158,7 +158,7 @@ failed to receive status line from: 127.0.0.1:12357, timeout
                 return {status = 502}
             end
 
-            local ok, err  = checkups.ready_ok("upyun", cb, {cluster_key = {default="c1", backup="c2"}})
+            local ok, err  = checkups.ready_ok("upyun", cb, {cluster_key = {"c1", "c2"}})
             if err then
                 ngx.say(err)
             end
@@ -171,7 +171,7 @@ GET /t
 127.0.0.1:12356
 127.0.0.1:12356
 127.0.0.1:12354
-round robin: no servers available
+no servers available
 --- grep_error_log eval: qr/failed to connect: 127.0.0.1:\d+, connection refused|failed to receive status line from: 127.0.0.1:\d+, timeout/
 --- grep_error_log_out
 failed to receive status line from: 127.0.0.1:12357, timeout

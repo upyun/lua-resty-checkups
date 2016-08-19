@@ -63,14 +63,14 @@ __DATA__
             checkups.create_checker()
 
             local res = checkups.ready_ok("s1", function(host, port)
-                local r = ngx.location.capture("/a", { args = { host = host, port = port, code = 200 } }) 
+                local r = ngx.location.capture("/a", { args = { host = host, port = port, code = 200 } })
                 if r then ngx.say(r.body) else ngx.say("ERR") end
                 return r
             end)
 
             for i=1, 10 do
                 local res = checkups.ready_ok("s1", function(host, port)
-                    local r = ngx.location.capture("/a", { args = { host = host, port = port, code = 502 } }) 
+                    local r = ngx.location.capture("/a", { args = { host = host, port = port, code = 502 } })
                     if r then ngx.say(r.body) else ngx.say("ERR") end
                     return r
                 end)
@@ -80,7 +80,7 @@ __DATA__
 
             for i=1, 10 do
                 local res = checkups.ready_ok("s1", function(host, port)
-                    local r = ngx.location.capture("/a", { args = { host = host, port = port, code = 502 } }) 
+                    local r = ngx.location.capture("/a", { args = { host = host, port = port, code = 502 } })
                     if r then ngx.say(r.body) else ngx.say("ERR") end
                     return r
                 end)
@@ -104,10 +104,10 @@ GET /t
 127.0.0.1:12355:502
 127.0.0.1:12355:502
 127.0.0.1:12355:502
-127.0.0.1:12354:502
 127.0.0.1:12355:502
 127.0.0.1:12354:502
 127.0.0.1:12355:502
+127.0.0.1:12354:502
 127.0.0.1:12355:502
 127.0.0.1:12355:502
 127.0.0.1:12355:502
@@ -128,7 +128,7 @@ GET /t
 
             for i=1, 5 do
                 local res = checkups.ready_ok("s2", function(host, port)
-                    local r = ngx.location.capture("/a", { args = { host = host, port = port, code = 502 } }) 
+                    local r = ngx.location.capture("/a", { args = { host = host, port = port, code = 502 } })
                     if r then ngx.say(r.body) else ngx.say("ERR") end
                     return r
                 end)
@@ -138,7 +138,7 @@ GET /t
 
             for i=1, 5 do
                 local res = checkups.ready_ok("s2", function(host, port)
-                    local r = ngx.location.capture("/a", { args = { host = host, port = port, code = 502 } }) 
+                    local r = ngx.location.capture("/a", { args = { host = host, port = port, code = 502 } })
                     if r then ngx.say(r.body) else ngx.say("ERR") end
                     return r
                 end)
@@ -156,8 +156,8 @@ GET /t
 127.0.0.1:12355:502
 127.0.0.1:12355:502
 127.0.0.1:12355:502
-127.0.0.1:12354:502
 127.0.0.1:12355:502
+127.0.0.1:12354:502
 127.0.0.1:12355:502
 127.0.0.1:12355:502
 127.0.0.1:12355:502
@@ -175,7 +175,7 @@ GET /t
 
             for i=1, 5 do
                 local res = checkups.ready_ok("s3", function(host, port)
-                    local r = ngx.location.capture("/a", { args = { host = host, port = port, code = 502 } }) 
+                    local r = ngx.location.capture("/a", { args = { host = host, port = port, code = 502 } })
                     if r then ngx.say(r.body) else ngx.say("ERR") end
                     return r
                 end)
@@ -185,7 +185,7 @@ GET /t
 
             for i=1, 5 do
                 local res = checkups.ready_ok("s3", function(host, port)
-                    local r = ngx.location.capture("/a", { args = { host = host, port = port, code = 502 } }) 
+                    local r = ngx.location.capture("/a", { args = { host = host, port = port, code = 502 } })
                     if r then ngx.say(r.body) else ngx.say("ERR") end
                     return r
                 end)
@@ -203,8 +203,8 @@ GET /t
 127.0.0.1:12356:502
 127.0.0.1:12356:502
 127.0.0.1:12356:502
-127.0.0.1:12354:502
 127.0.0.1:12355:502
+127.0.0.1:12354:502
 127.0.0.1:12356:502
 127.0.0.1:12356:502
 127.0.0.1:12356:502

@@ -9,6 +9,7 @@ _M.global = {
 _M.status = {
     timeout = 2,
     typ = "http",
+    try = 2,
     http_opts = {
         query = "GET /status HTTP/1.1\r\nHost: localhost\r\n\r\n",
         statuses = {
@@ -18,7 +19,6 @@ _M.status = {
 
     cluster = {
         {   -- level 1
-            try = 2,
             servers = {
                 { host = "127.0.0.1", port = 12354 },
                 { host = "127.0.0.1", port = 12355 },

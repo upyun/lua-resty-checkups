@@ -10,10 +10,10 @@ _M.global = {
 
 _M.ups1 = {
     timeout = 2,
+    try = 2,
 
     cluster = {
         {   -- level 1
-            try = 2,
             servers = {
             }
         },
@@ -26,10 +26,10 @@ _M.ups1 = {
 
 _M.ups2 = {
     timeout = 2,
+    try = 2,
 
     cluster = {
         {   -- level 1
-            try = 2,
             servers = {
                 { host = "127.0.0.1", port = 12350 },
             }
@@ -43,10 +43,10 @@ _M.ups2 = {
 
 _M.ups3 = {
     timeout = 2,
+    try = 2,
 
     cluster = {
         {   -- level 1
-            try = 2,
             upstream = "api.com",
         },
         {   -- level 2

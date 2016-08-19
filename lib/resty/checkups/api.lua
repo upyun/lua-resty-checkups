@@ -3,10 +3,11 @@
 local cjson      = require "cjson.safe"
 
 local consistent_hash = require "resty.checkups.consistent_hash"
-local round_robin= require "resty.checkups.round_robin"
-local heartbeat  = require "resty.checkups.heartbeat"
-local dyconfig   = require "resty.checkups.dyconfig"
-local base       = require "resty.checkups.base"
+local round_robin     = require "resty.checkups.round_robin"
+local heartbeat       = require "resty.checkups.heartbeat"
+local dyconfig        = require "resty.checkups.dyconfig"
+local base            = require "resty.checkups.base"
+local try             = require "resty.checkups.try"
 
 local str_format = string.format
 
@@ -27,21 +28,6 @@ local _M = {
     _VERSION = "0.20",
     STATUS_OK = base.STATUS_OK, STATUS_UNSTABLE = base.STATUS_UNSTABLE, STATUS_ERR = base.STATUS_ERR
 }
-
-_M.reset_round_robin_state = round_robin.reset_round_robin_state
-_M.try_cluster_round_robin = round_robin.try_cluster_round_robin
-
-
-local function try_cluster(skey, ups, cls, callback, opts, try_again)
-    local mode = ups.mode
-    local args = opts.args or {}
-    if mode == "hash" then
-        local hash_key = opts.hash_key or ngx.var.uri
-        return consistent_hash.try_cluster_consistent_hash(skey, ups, cls, callback, args, hash_key)
-    else
-        return round_robin.try_cluster_round_robin_(skey, ups, cls, callback, args, try_again)
-    end
-end
 
 
 function _M.feedback_status(skey, host, port, failed)
@@ -76,54 +62,7 @@ function _M.ready_ok(skey, callback, opts)
         return nil, "unknown skey " .. skey
     end
 
-    local res, err, cont, try_again
-
-    -- try by key
-    if opts.cluster_key then
-        for _, cls_key in ipairs({ opts.cluster_key.default,
-            opts.cluster_key.backup }) do
-            local cls = ups.cluster[cls_key]
-            if cls then
-                res, cont, err = try_cluster(skey, ups, cls, callback, opts, try_again)
-                if res then
-                    return res, err
-                end
-
-
-                -- continue to next key?
-                if not cont then break end
-
-                if type(cont) == "number" then
-                    if cont < 1 then
-                        break
-                    else
-                        try_again = cont
-                    end
-                end
-            end
-        end
-        return nil, err or "no upstream available"
-    end
-
-    -- try by level
-    for level, cls in ipairs(ups.cluster) do
-        res, cont, err = try_cluster(skey, ups, cls, callback, opts, try_again)
-        if res then
-            return res, err
-        end
-
-        -- continue to next level?
-        if not cont then break end
-
-        if type(cont) == "number" then
-            if cont < 1 then
-                break
-            else
-                try_again = cont
-            end
-        end
-    end
-    return nil, err or "no upstream available"
+    return try.try_cluster(skey, callback, opts)
 end
 
 
@@ -147,7 +86,6 @@ function _M.prepare_checker(config)
 
             for level, cls in pairs(base.upstream.checkups[skey].cluster) do
                 base.extract_servers_from_upstream(skey, cls)
-                _M.reset_round_robin_state(cls)
             end
             if base.upstream.checkup_shd_sync_enable then
                 if shd_config and worker_id then

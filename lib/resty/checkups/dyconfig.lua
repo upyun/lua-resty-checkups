@@ -1,6 +1,5 @@
 local cjson         = require "cjson.safe"
 
-local round_robin   = require "resty.checkups.round_robin"
 local base          = require "resty.checkups.base"
 
 local worker_id     = ngx.worker.id
@@ -73,9 +72,6 @@ local function shd_config_syncer(premature)
 
                     local ups = base.upstream.checkups[skey].cluster
                     -- only reset for rr cluster
-                    for level, cls in ipairs(ups) do
-                        round_robin.reset_round_robin_state(cls)
-                    end
                 elseif err then
                     success = false
                     log(WARN, "failed to get from shm: ", err)

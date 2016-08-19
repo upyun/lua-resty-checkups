@@ -32,10 +32,10 @@ _M.single_level = {
 
 _M.multi_level = {
     timeout = 2,
+    try = 8,
 
     cluster = {
         {   -- level 1
-            try = 8,
             servers = {
                 { host = "127.0.0.1", port = 12354, weight = 2 }, -- fake
                 { host = "127.0.0.1", port = 12355, weight = 3 },
@@ -68,10 +68,10 @@ _M.single_key = {
 
 _M.multi_key = {
     timeout = 2,
+    try = 6,
 
     cluster = {
         c1 = {
-            try = 6,
             servers = {
                 { host = "127.0.0.1", port = 12354, weight = 2 }, -- fake
                 { host = "127.0.0.1", port = 12355, weight = 3 },
@@ -92,10 +92,10 @@ _M.multi_key = {
 
 _M.multi_fake_c1 = {
     timeout = 2,
+    try = 6,
 
     cluster = {
         c1 = {
-            try = 6,
             servers = {
                 { host = "127.0.0.1", port = 12357, weight = 3000 },    -- fake
                 { host = "127.0.0.1", port = 12359, weight = 3200000 }, -- fake

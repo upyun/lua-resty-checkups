@@ -8,12 +8,12 @@ _M.global = {
 
 _M.api = {
     timeout = 2,
+    try = 2,
 
     protected = false,
 
     cluster = {
         {   -- level 1
-            try = 2,
             servers = {
                 { host = "127.0.0.1", port = 12354 },
                 { host = "127.0.0.1", port = 12355 },

@@ -153,7 +153,7 @@ function _M.check_res(res, check_opts)
         local typ = check_opts.typ
 
         if typ == "http" and type(res) == "table"
-            and res.status then
+        and res.status then
             local status = tonumber(res.status)
             local http_opts = check_opts.http_opts
             if http_opts and http_opts.statuses and
@@ -204,6 +204,13 @@ function _M.release_lock(lock)
     if not ok then
         log(WARN, "failed to unlock: ", err)
     end
+end
+
+
+function _M.get_peer_status(skey, srv)
+    local peer_key = PEER_STATUS_PREFIX .. _gen_key(skey, srv)
+    local peer_status = cjson.decode(state:get(peer_key))
+    return peer_status
 end
 
 
