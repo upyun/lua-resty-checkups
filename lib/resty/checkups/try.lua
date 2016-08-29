@@ -9,8 +9,6 @@ local sqrt       = math.sqrt
 local floor      = math.floor
 local tab_insert = table.insert
 
-local is_tab = function(t) return type(t) == "table" end
-
 local state = ngx.shared.state
 
 local _M = { _VERSION = "0.11" }
@@ -22,6 +20,7 @@ local EXCESS_TRY_LIMIT = 2
 
 local function prepare_callbacks(skey, opts)
     local base = require "resty.checkups.base"
+    local is_tab = base.is_tab
     local ups = base.upstream.checkups[skey]
 
     -- calculate count of cluster and server
@@ -140,7 +139,7 @@ parameters:
     - (string) skey
     - (function) request_cb(host, port)
     - (table) opts
-        - (int) try
+        - (number) try
         - (table) cluster_key
         - (string) hash_key
 return:

@@ -62,6 +62,9 @@ local cluster_status = {}
 _M.cluster_status = cluster_status
 
 
+_M.is_tab = function(t) return type(t) == "table" end
+
+
 local function _gen_key(skey, srv)
     return str_format("%s:%s:%d", skey, srv.host, srv.port)
 end

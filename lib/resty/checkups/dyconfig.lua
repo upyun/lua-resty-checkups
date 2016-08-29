@@ -69,9 +69,6 @@ local function shd_config_syncer(premature)
                     end
 
                     base.upstream.checkups[skey].cluster = base.table_dup(shd_servers)
-
-                    local ups = base.upstream.checkups[skey].cluster
-                    -- only reset for rr cluster
                 elseif err then
                     success = false
                     log(WARN, "failed to get from shm: ", err)

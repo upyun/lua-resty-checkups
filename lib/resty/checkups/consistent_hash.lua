@@ -5,8 +5,6 @@ local str_byte   = string.byte
 local tab_sort   = table.sort
 local tab_insert = table.insert
 
-local is_tab = function(t) return type(t) == "table" end
-
 local _M = { _VERSION = "0.11" }
 
 local MOD      = 2 ^ 32
@@ -64,6 +62,7 @@ end
 
 
 function _M.next_consistent_hash_server(servers, peer_cb, hash_key)
+    local is_tab = require "resty.checkups.base".is_tab
     servers.chash = is_tab(servers.chash) and servers.chash
                     or init_consistent_hash_state(servers)
 
