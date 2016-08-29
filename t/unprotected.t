@@ -91,8 +91,8 @@ __DATA__
 --- request
 GET /t
 --- response_body
-round robin: no servers available
-round robin: no servers available
+no servers available
+no servers available
 err
 down
 err

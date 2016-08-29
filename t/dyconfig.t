@@ -162,7 +162,7 @@ __DATA__
 --- request
 GET /t
 --- response_body
-no upstream available
+no servers available
 12353
 12353
 12350

@@ -115,7 +115,7 @@ GET /t
                 return 1
             end
 
-            for i = 1, 30, 1 do
+            for i = 1, 28, 1 do
                 local ok, err = checkups.ready_ok("single_level", cb_ok)
                 if err then
                     ngx.say(err)
@@ -125,7 +125,7 @@ GET /t
     }
 --- request
 GET /t
---- response_body: EEBEBCEBCEABCEEEBEBCEBCEABCEEE
+--- response_body: EBCEBEACEBECBEEBCEBEACEBECBE
 
 === TEST 3: Round robin with fake hosts, try by level
 --- http_config eval
@@ -156,7 +156,7 @@ GET /t
     }
 --- request
 GET /t
---- response_body: EFH EFH EFH EFH EFH
+--- response_body: EFH FEH EFH FEH EFH
 
 === TEST 4: Round robin is consistent, try by key
 --- http_config eval
@@ -177,8 +177,8 @@ GET /t
                 return 1
             end
 
-            for i = 1, 20, 1 do
-                local ok, err = checkups.ready_ok("single_key", cb_ok, {cluster_key = {default = "c1"}})
+            for i = 1, 18, 1 do
+                local ok, err = checkups.ready_ok("single_key", cb_ok, {cluster_key = {"c1"}})
                 if err then
                     ngx.say(err)
                 end
@@ -187,7 +187,7 @@ GET /t
     }
 --- request
 GET /t
---- response_body: CBCABCCBCABCCBCABCCB
+--- response_body: CBACBCCBACBCCBACBC
 
 === TEST 5: Round robin with fake hosts, try by key
 --- http_config eval
@@ -209,7 +209,7 @@ GET /t
             end
 
             for i = 1, 5, 1 do
-                local ok, err = checkups.ready_ok("multi_key", cb_ok, {cluster_key = {default = "c1", backup = "c2"}})
+                local ok, err = checkups.ready_ok("multi_key", cb_ok, {cluster_key = {"c1", "c2"}})
                 if i ~= 5 then
                     ngx.print(" ")
                 end
@@ -218,7 +218,7 @@ GET /t
     }
 --- request
 GET /t
---- response_body: EFH EFH EFH EFH EFH
+--- response_body: EFH FEH EFH FEH EFH
 
 === TEST 6: Round robin with multiple fake hosts and large weight, try by key
 --- http_config eval
@@ -238,7 +238,7 @@ GET /t
                 return
             end
 
-            local ok, err = checkups.ready_ok("multi_fake_c1", cb_ok, {cluster_key = {default = "c1", backup = "c2"}})
+            local ok, err = checkups.ready_ok("multi_fake_c1", cb_ok, {cluster_key = {"c1", "c2"}})
             if err then
                 ngx.print(" ")
                 ngx.say(err)
@@ -248,69 +248,5 @@ GET /t
 --- request
 GET /t
 --- response_body
-FH round robin: no servers available
+FH no servers available
 --- timeout: 10
-
-=== TEST 7: Round robin interface
---- http_config eval
-"$::HttpConfig" . "$::InitConfig"
---- config
-    location = /t {
-        content_by_lua_file $TEST_NGINX_PWD/t/lib/round_robin_interface.lua;
-    }
---- request
-GET /t
---- response_body
-G0ADE 3 FA round robin: no servers available
-0AEA 1 F round robin: no servers available
-0AEA 1 F round robin: no servers available
-0AEA 1 F round robin: no servers available
-0AEA 1 F round robin: no servers available
-
-G0ADE 3 FA round robin: no servers available
-0AEA 1 F round robin: no servers available
-0AEA 1 F round robin: no servers available
-0AEA 1 F round robin: no servers available
-0AEA 1 F round robin: no servers available
-
- 0AE 3 FA round robin: no servers available
- 0AEA 1 F round robin: no servers available
- 0AEA 1 F 0AE 3 F 0AE 3 F
-
-0A port: 12351
-0A port: 12351
-0A port: 12351
-0A port: 12351
-0A port: 12351
-
-0000A0A000A0A000A0A0|
---- timeout: 30
-
-=== TEST 8: Round robin method, single host and callback with args
---- http_config eval
-"$::HttpConfig" . "$::InitConfig"
---- config
-    location = /t {
-        content_by_lua '
-            local checkups = require "resty.checkups"
-            checkups.create_checker()
-            ngx.sleep(2)
-            local cb_ok = function(host, port, ...)
-                local arg_a, arg_b = ...
-                ngx.say(host .. ":" .. port)
-                ngx.say("args:" .. arg_a .. "&" .. arg_b)
-                return 1
-            end
-
-            local opts = { args = {"abc", "efg"} }
-            local ok, err = checkups.ready_ok("single_host", cb_ok, opts)
-            if err then
-                ngx.say(err)
-            end
-        ';
-    }
---- request
-GET /t
---- response_body
-127.0.0.1:12350
-args:abc&efg
