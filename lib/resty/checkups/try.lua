@@ -3,15 +3,19 @@
 local cjson           = require "cjson.safe"
 local round_robin     = require "resty.checkups.round_robin"
 local consistent_hash = require "resty.checkups.consistent_hash"
+local base            = require "resty.checkups.base"
 
 local max        = math.max
 local sqrt       = math.sqrt
 local floor      = math.floor
 local tab_insert = table.insert
 
-local state = ngx.shared.state
+local update_time     = ngx.update_time
+local now             = ngx.now
 
 local _M = { _VERSION = "0.11" }
+
+local is_tab = base.is_tab
 
 local NEED_RETRY       = 0
 local REQUEST_SUCCESS  = 1
@@ -19,8 +23,6 @@ local EXCESS_TRY_LIMIT = 2
 
 
 local function prepare_callbacks(skey, opts)
-    local base = require "resty.checkups.base"
-    local is_tab = base.is_tab
     local ups = base.upstream.checkups[skey]
 
     -- calculate count of cluster and server
@@ -92,7 +94,7 @@ local function prepare_callbacks(skey, opts)
     end
     local try_cnt = 0
     local try_limit = opts.try or ups.try or srvs_cnt
-    local retry_cb = function(res, err)
+    local retry_cb = function(res)
         if is_tab(res) and res.status and is_tab(statuses) then
             if statuses[res.status] ~= false then
                 return REQUEST_SUCCESS
@@ -103,6 +105,21 @@ local function prepare_callbacks(skey, opts)
 
         try_cnt = try_cnt + 1
         if try_cnt >= try_limit then
+            return EXCESS_TRY_LIMIT
+        end
+
+        return NEED_RETRY
+    end
+
+
+    -- check whether try_time has over amount_request_time
+    local try_time = 0
+    local try_time_limit = opts.try_timeout or ups.try_timeout or 0
+    local try_time_cb = function(this_time_try_time)
+        try_time = try_time + this_time_try_time
+        if try_time_limit == 0 then
+            return NEED_RETRY
+        elseif try_time >= try_time_limit then
             return EXCESS_TRY_LIMIT
         end
 
@@ -129,6 +146,7 @@ local function prepare_callbacks(skey, opts)
         retry_cb = retry_cb,
         peer_cb = peer_cb,
         set_status_cb = set_status_cb,
+        try_time_cb = try_time_cb,
     }
 end
 
@@ -154,6 +172,7 @@ function _M.try_cluster(skey, request_cb, opts)
     local peer_cb         = callbacks.peer_cb
     local retry_cb        = callbacks.retry_cb
     local set_status_cb   = callbacks.set_status_cb
+    local try_time_cb     = callbacks.try_time_cb
 
     -- iter servers function
     local itersrvs = function(servers, peer_cb)
@@ -170,15 +189,24 @@ function _M.try_cluster(skey, request_cb, opts)
 
         for srv, err in itersrvs(cls.servers, peer_cb) do
             -- exec request callback by server
+            local start_time = now()
             res, err = request_cb(srv.host, srv.port)
 
             -- check whether need retry
-            local feedback = retry_cb(res, err)
+            local end_time = now()
+            local delta_time = end_time - start_time
+
+            local feedback = retry_cb(res)
             set_status_cb(srv, feedback ~= REQUEST_SUCCESS) -- set some status
             if feedback ~= NEED_RETRY then
                 return res, err
             end
-        end
+
+            local feedback_try_time = try_time_cb(delta_time)
+            if feedback_try_time ~= NEED_RETRY then
+                return nil, "try_timeout excceed"
+            end
+       end
     until false
 
     return res, err

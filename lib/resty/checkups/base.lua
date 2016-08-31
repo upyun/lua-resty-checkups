@@ -63,6 +63,8 @@ _M.cluster_status = cluster_status
 
 
 _M.is_tab = function(t) return type(t) == "table" end
+_M.is_str = function(t) return type(t) == "string" end
+_M.is_num = function(t) return type(t) == "number" end
 
 
 local function _gen_key(skey, srv)
