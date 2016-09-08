@@ -185,7 +185,7 @@ function _M.do_delete_upstream(skey)
 
         ok, err = shd_config:delete(key)
         if err then
-            log(WARN, "failed to set new servers to shm")
+            log(WARN, "failed to delete servers in shm")
             return false, err
         end
 
