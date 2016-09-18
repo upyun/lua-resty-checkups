@@ -277,9 +277,9 @@ function _M.delete_upstream(skey)
 
     ok, err = dyconfig.do_delete_upstream(skey)
 
-	base.release_lock(lock)
+    base.release_lock(lock)
 
-	return ok, err
+    return ok, err
 end
 
 
