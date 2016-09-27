@@ -61,9 +61,10 @@ local function prepare_callbacks(skey, opts)
 
     -- get next select server
     local mode = ups.mode
-    local key = opts.hash_key or ngx.var.uri
     local next_server_func = round_robin.next_round_robin_server
+    local key
     if mode == "hash" then
+        key = opts.hash_key or ngx.var.uri
         next_server_func = consistent_hash.next_consistent_hash_server
     end
     local next_server_cb = function(servers, peer_cb)
