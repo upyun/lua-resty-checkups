@@ -1,6 +1,6 @@
-OPENRESTY_PREFIX=/opt/openresty
+OPENRESTY_PREFIX=/usr/local/openresty
 
-PREFIX ?=          /opt/openresty/luajit
+PREFIX ?=          /usr/local
 LUA_INCLUDE_DIR ?= $(PREFIX)/include
 LUA_LIB_DIR ?=     $(PREFIX)/lib/lua/$(LUA_VERSION)
 INSTALL ?= install
@@ -15,4 +15,4 @@ install: all
 
 test: all
 	util/lua-releng
-	PATH=$(OPENRESTY_PREFIX)/nginx/sbin:$$PATH prove -I../test-nginx/lib -r t/ups_down.t
+	PATH=$(OPENRESTY_PREFIX)/nginx/sbin:$$PATH prove -I../test-nginx/lib -r t/
