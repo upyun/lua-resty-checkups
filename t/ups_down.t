@@ -50,9 +50,7 @@ our $HttpConfig = qq{
 
 $ENV{TEST_NGINX_CHECK_LEAK} = 1;
 $ENV{TEST_NGINX_USE_HUP} = 1;
-$ENV{TEST_NGINX_NO_NGINX_MANAGER} = 0;
 $ENV{TEST_NGINX_RESOLVER} = '8.8.8.8';
-$ENV{TEST_NGINX_NO_CLEAN} = 1;
 no_long_string();
 no_diff();
 
