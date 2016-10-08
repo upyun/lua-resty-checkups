@@ -66,7 +66,7 @@ __DATA__
         content_by_lua '
             local upstream = require "ngx.upstream"
 
-
+            ngx.sleep(1)
             local srvs = upstream.get_primary_peers("api.com")
 
             ngx.say(srvs[1].down)
