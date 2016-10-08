@@ -163,6 +163,15 @@ function _M.create_checker()
         dyconfig.create_shd_config_syncer()
     end
 
+    if base.upstream.ups_status_sync_enable and not base.ups_status_timer_created then
+        local ok, err = ngx.timer.at(0, base.ups_status_checker)
+        if not ok then
+            log(WARN, "failed to create ups_status_checker: ", err)
+            return
+        end
+        base.ups_status_timer_created = true
+    end
+
     local ckey = base.CHECKUP_TIMER_KEY
     local val, err = mutex:get(ckey)
     if val then
@@ -198,16 +207,6 @@ function _M.create_checker()
         log(WARN, "failed to create timer: ", err)
         base.release_lock(lock)
         return
-    end
-
-    if base.upstream.ups_status_sync_enable and not base.ups_status_timer_created then
-        local ok, err = ngx.timer.at(0, base.ups_status_checker)
-        if not ok then
-            log(WARN, "failed to create ups_status_checker: ", err)
-            base.release_lock(lock)
-            return
-        end
-        base.ups_status_timer_created = true
     end
 
     local overtime = base.upstream.checkup_timer_overtime
