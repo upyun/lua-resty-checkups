@@ -67,12 +67,14 @@ Synopsis
             },
         },
     }
+
+    return _M
 ```
 
 ```lua
     -- nginx.conf
 
-    lua_package_path "/path/to/lua-resty-checkups/lib/checkups/?.lua;/path/to/config.lua;;";
+    lua_package_path "/path/to/lua-resty-checkups/lib/?.lua;/path/to/config.lua;;";
 
     lua_shared_dict state 10m;
     lua_shared_dict mutex 1m;
@@ -92,7 +94,7 @@ Synopsis
     init_worker_by_lua_block {
         local config = require "config"
         local checkups = require "resty.checkups.api"
-        
+
         checkups.prepare_checker(config)
         checkups.create_checker()
     }
@@ -114,13 +116,13 @@ Synopsis
                     ngx.say(res.body)
                     return 1
                 end
-                
+
                 local ok, err
-                
+
                 -- connect to a dead server, no upstream available
                 ok, err = checkups.ready_ok("ups1", callback)
                 if err then ngx.say(err) end
-        
+
                 -- add server to ups1
                 ok, err = checkups.update_upstream("ups1", {
                     {
@@ -136,7 +138,7 @@ Synopsis
                 if err then ngx.say(err) end
                 ok, err = checkups.ready_ok("ups1", callback)
                 if err then ngx.say(err) end
-                
+
                 -- add server to new upstream
                 ok, err = checkups.update_upstream("ups2", {
                         {
@@ -149,7 +151,7 @@ Synopsis
                 ngx.sleep(1)
                 ok, err = checkups.ready_ok("ups2", callback)
                 if err then ngx.say(err) end
-                
+
                 -- add server to ups2, reset rr state
                 ok, err = checkups.update_upstream("ups2", {
                         {
@@ -185,7 +187,7 @@ Configuration
 Lua configuration
 -----------------
 
-Configuration file of checkups is a lua module consists of two parts, the global part and the cluster part. 
+Configuration file of checkups is a lua module consists of two parts, the global part and the cluster part.
 
 
 An example configuration file of checkups is shown below,
@@ -210,14 +212,14 @@ An example configuration file of checkups is shown below,
     -- The rests parts are cluster configurations
 
     _M.redis = {
-            enable = true,
-            typ = "redis",
+        enable = true,
+        typ = "redis",
         timeout = 2,
         read_timeout = 15,
         send_timeout = 15,
 
-            protected = true,
-            
+        protected = true,
+
         cluster = {
             {   -- level 1
                     try = 2,
@@ -246,9 +248,9 @@ An example configuration file of checkups is shown below,
                     [504] = false,
             },
         },
-        
+
         mode = "hash",
-        
+
         cluster = {
             dc1 = {
                 servers = {
@@ -310,7 +312,7 @@ Cluster configurations
 
 * `mode`: Balance mode. If set to `hash`, checkups will balance servers by `hash_key` or `ngx.req.uri` if no `hash_key` is specified. Default is `wrr`.
 * `protected`: If set to `true` and all the servers in the cluster are failing, checkups will not mark the last failing server as unavailable(`err`), instead, it will be marked as `unstable`(still available in next try). Default is `true`.
-* `cluster`: You can configure multiple levels according to the cluster priority, at each level you can configure a cluster of `servers`. Checkups will try next level only when all the servers in the prior level are consitered unavailable. 
+* `cluster`: You can configure multiple levels according to the cluster priority, at each level you can configure a cluster of `servers`. Checkups will try next level only when all the servers in the prior level are consitered unavailable.
 
 	Instead of trying clusters by levels, you can configure checkups trying clusters by key(see `api` cluster above). Remember you should also pass extra argument like `opts.cluster_key={"dc1", "dc2"}` or `opts.cluster_key={3, 1, 2}` to [checkups.read_ok](#ready_ok) to make checkups trying on the order of `dc1`, `dc2` or `level 3`, `level 1`, `level 2`. If you haven't passed `opts.cluster_key` to [checkups.ready_ok](#ready_ok), checkups will still try clusters by levels. As for the above `api` cluster, checkups will eventually return `no servers available`.
 * `try`: Retry count. Default is the number of servers.
@@ -329,7 +331,7 @@ Nginx configuration
 
 Add pathes of lua config file and checkups to `lua_package_path` and create lua shared dicts used by checkups. You should put these lines into `http` block of your Nginx config file.
 
-    lua_package_path "/path/to/lua-resty-checkups/lib/checkups/?.lua;/path/to/config.lua;;";
+    lua_package_path "/path/to/lua-resty-checkups/lib/?.lua;/path/to/config.lua;;";
 
     lua_shared_dict state 10m;
     lua_shared_dict mutex 1m;
