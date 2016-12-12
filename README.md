@@ -310,7 +310,7 @@ Cluster configurations
 	* `query`: HTTP request to heartbeat.
 	* `statuses`: If the code returned by server is set to `false`, then the server is considered to be failing.
 
-* `mode`: Balance mode. If set to `hash`, checkups will balance servers by `hash_key` or `ngx.req.uri` if no `hash_key` is specified. Default is `wrr`.
+* `mode`: Balance mode. Can be set to `hash`, `url_hash` or `ip_hash`. Checkups will balance servers by `hash_key`, `ngx.var.uri` or `ngx.var.remote_addr`. Default is `wrr`.
 * `protected`: If set to `true` and all the servers in the cluster are failing, checkups will not mark the last failing server as unavailable(`err`), instead, it will be marked as `unstable`(still available in next try). Default is `true`.
 * `cluster`: You can configure multiple levels according to the cluster priority, at each level you can configure a cluster of `servers`. Checkups will try next level only when all the servers in the prior level are consitered unavailable.
 
