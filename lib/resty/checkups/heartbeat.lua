@@ -100,8 +100,28 @@ end
 local heartbeat = {
     general = function (host, port, ups)
         local id = host .. ':' .. port
+        local protocol = ups.protocol or {}
+        local protocol_config = protocol.config or {}
+        local pro_mod = protocol.module
+        local sock, err
 
-        local sock = tcp()
+        if pro_mod then
+            local ok, mod = pcall(require, pro_mod)
+            if not ok then
+                log(ERR, "failed to require ", pro_mod)
+            else
+                sock, err = mod:new(protocol_config)
+                if not sock then
+                    log(ERR, "failed to new mod: ", err)
+                    return _M.STATUS_ERR, err
+                end
+            end
+        end
+
+        if not sock then
+            sock = tcp()
+        end
+
         sock:settimeout(ups.timeout * 1000)
         local ok, err = sock:connect(host, port)
         if not ok then
@@ -109,8 +129,12 @@ local heartbeat = {
             return _M.STATUS_ERR, err
         end
 
-        sock:setkeepalive()
-
+        local keepalive_timeout = ups.keepalive_timeout
+        local pool_size = ups.keepalive_size
+        local ok, err = sock:setkeepalive(keepalive_timeout, pool_size)
+        if not ok then
+            log(WARN, "failed to setkeepalive: ", id, ", ", err)
+        end
         return _M.STATUS_OK
     end,
 
