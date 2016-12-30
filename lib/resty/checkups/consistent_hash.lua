@@ -7,8 +7,9 @@ local tab_insert = table.insert
 
 local _M = { _VERSION = "0.11" }
 
-local MOD      = 2 ^ 32
-local REPLICAS = 20
+local MOD       = 2 ^ 32
+local REPLICAS  = 20
+local LUCKY_NUM = 13
 
 
 local function hash_string(str)
@@ -33,7 +34,7 @@ local function init_consistent_hash_state(servers)
         local base_hash = hash_string(key)
         for c = 1, REPLICAS * weight_sum do
             -- TODO: more balance hash
-            local hash = (base_hash * c) % MOD
+            local hash = (base_hash * c * LUCKY_NUM) % MOD
             tab_insert(circle, { hash, index })
         end
         members = members + 1
