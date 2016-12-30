@@ -77,9 +77,10 @@ function _M.next_consistent_hash_server(servers, peer_cb, hash_key)
 
     local circle = chash.circle
     local st = binary_search(circle, hash_string(hash_key))
-    local ed = #circle
+    local size = #circle
+    local ed = st + size - 1
     for i = st, ed do  -- TODO: algorithm O(n)
-        local idx = circle[i][2]
+        local idx = circle[(i - 1) % size + 1][2]
         if peer_cb(idx, servers[idx]) then
             return servers[idx]
         end
