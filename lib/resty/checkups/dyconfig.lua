@@ -3,6 +3,7 @@ local cjson         = require "cjson.safe"
 local base          = require "resty.checkups.base"
 
 local worker_id     = ngx.worker.id
+local worker_count  = ngx.worker.count
 local update_time   = ngx.update_time
 local mutex         = ngx.shared.mutex
 local state         = ngx.shared.state
@@ -247,6 +248,31 @@ function _M.create_shd_config_syncer()
     if not ok then
         log(WARN, "failed to update shm: ", err)
     end
+end
+
+
+function _M.get_timer_key_status()
+    if not worker_count then
+        log(WARN, "can not get worker count, please upgrade lua-nginx-module to 0.9.20 or higher")
+        return
+    end
+
+    local timer_status = {}
+    local count = worker_count()
+    for i=0, count-1 do
+        local key = "worker-" .. i
+        local ckey = base.CHECKUP_TIMER_KEY .. ":shd_config:" .. i
+        local val, err = mutex:get(ckey)
+        if err then
+            timer_status[key] = err
+        elseif val then
+            timer_status[key] = "alive"
+        else
+            timer_status[key] = "dead"
+        end
+    end
+
+    return timer_status
 end
 
 
