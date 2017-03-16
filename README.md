@@ -44,6 +44,12 @@ Features
 * Synchronize with Nginx upstream blocks
 * Try clusters by levels or by keys
 
+Compatibility
+=============
+
+* [ngx_http_lua_module](https://github.com/openresty/lua-nginx-module): v0.9.20 or higher.
+
+
 Synopsis
 ========
 
