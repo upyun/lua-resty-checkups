@@ -6,6 +6,7 @@ use Cwd qw(cwd);
 use Test::Nginx::Socket 'no_plan';
 
 workers(4);
+master_process_enabled(1);
 
 my $pwd = cwd();
 
@@ -50,6 +51,7 @@ our $HttpConfig = qq{
         local config = require "config_dyconfig"
         local checkups = require "resty.checkups"
         checkups.prepare_checker(config)
+        checkups.create_checker()
     ';
 };
 
@@ -701,5 +703,65 @@ GET /t
 unknown skey new_ups
 12352
 12353
+
+--- timeout: 10
+
+
+=== TEST 8: get timer status
+--- http_config eval: $::HttpConfig
+--- config
+    location = /12350 {
+        proxy_pass http://127.0.0.1:12350/;
+    }
+    location = /12351 {
+        proxy_pass http://127.0.0.1:12351/;
+    }
+    location = /12352 {
+        proxy_pass http://127.0.0.1:12352/;
+    }
+    location = /12353 {
+        proxy_pass http://127.0.0.1:12353/;
+    }
+
+    location = /t {
+        content_by_lua '
+            local checkups = require "resty.checkups"
+            ngx.sleep(2)
+            local cjson = require "cjson.safe"
+
+            local callback = function(host, port)
+                local res = ngx.location.capture("/" .. port)
+                ngx.say(res.body)
+                return 1
+            end
+
+            local ok, err = checkups.update_upstream("ups2", {
+                    {
+                        servers = {
+                            {host="127.0.0.1", port=12350},
+                            {host="127.0.0.1", port=12351},
+                            {host="127.0.0.1", port=12352},
+                            {host="127.0.0.1", port=12353},
+                        }
+                    },
+                })
+            if err then ngx.say(err) end
+
+            ngx.sleep(1)
+
+            local status = checkups.get_status()
+            ngx.say(status["config_timer"]["worker-0"])
+            ngx.say(status["config_timer"]["worker-1"])
+            ngx.say(status["config_timer"]["worker-2"])
+            ngx.say(status["config_timer"]["worker-3"])
+        ';
+    }
+--- request
+GET /t
+--- response_body
+alive
+alive
+alive
+alive
 
 --- timeout: 10

@@ -133,6 +133,8 @@ function _M.get_status()
     all_status.conf_hash = base.upstream.conf_hash or cjson.null
     all_status.shd_config_version = base.upstream.shd_config_version or cjson.null
 
+    all_status.config_timer = dyconfig.get_timer_key_status()
+
     return all_status
 end
 
