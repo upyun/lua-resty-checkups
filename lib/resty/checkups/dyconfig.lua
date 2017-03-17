@@ -226,17 +226,6 @@ end
 
 
 function _M.create_shd_config_syncer()
-    local ckey = base.CHECKUP_TIMER_KEY .. ":shd_config:" .. worker_id()
-    local val, err = mutex:get(ckey)
-    if val then
-        return
-    end
-
-    if err then
-        log(WARN, "failed to get key from shm: ", err)
-        return
-    end
-
     local ok, err = ngx.timer.at(0, shd_config_syncer)
     if not ok then
         log(ERR, "failed to create shd_config timer: ", err)
@@ -244,6 +233,7 @@ function _M.create_shd_config_syncer()
     end
 
     local overtime = base.upstream.checkup_timer_overtime
+    local ckey = base.CHECKUP_TIMER_KEY .. ":shd_config:" .. worker_id()
     local ok, err = mutex:set(ckey, 1, overtime)
     if not ok then
         log(WARN, "failed to update shm: ", err)

@@ -47,6 +47,11 @@ our $HttpConfig = qq{
     server {
         listen 12358;
     }
+
+    init_worker_by_lua '
+        local checkups = require "resty.checkups"
+        checkups.create_checker()
+    ';
 };
 
 our $InitConfig = qq{
@@ -77,7 +82,6 @@ __DATA__
     location = /t {
         content_by_lua '
             local checkups = require "resty.checkups"
-            checkups.create_checker()
             ngx.sleep(2)
             local cb_ok = function(host, port)
                 ngx.say(host .. ":" .. port)
@@ -102,7 +106,6 @@ GET /t
     location = /t {
         content_by_lua '
             local checkups = require "resty.checkups"
-            checkups.create_checker()
             ngx.sleep(2)
             local dict = {
                 [12351] = "A",
@@ -134,7 +137,6 @@ GET /t
     location = /t {
         content_by_lua '
             local checkups = require "resty.checkups"
-            checkups.create_checker()
             ngx.sleep(2)
             local dict = {
                 [12355] = "E",
@@ -165,7 +167,6 @@ GET /t
     location = /t {
         content_by_lua '
             local checkups = require "resty.checkups"
-            checkups.create_checker()
             ngx.sleep(2)
             local dict = {
                 [12351] = "A",
@@ -196,7 +197,6 @@ GET /t
     location = /t {
         content_by_lua '
             local checkups = require "resty.checkups"
-            checkups.create_checker()
             ngx.sleep(2)
             local dict = {
                 [12355] = "E",
@@ -227,7 +227,6 @@ GET /t
     location = /t {
         content_by_lua '
             local checkups = require "resty.checkups"
-            checkups.create_checker()
             ngx.sleep(2)
             local dict = {
                 [12356] = "F",

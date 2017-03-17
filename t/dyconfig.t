@@ -87,8 +87,6 @@ __DATA__
     location = /t {
         content_by_lua '
             local checkups = require "resty.checkups"
-            checkups.create_checker()
-            ngx.sleep(2)
 
             local callback = function(host, port)
                 local res = ngx.location.capture("/" .. port)
@@ -194,8 +192,6 @@ no servers available
     location = /t {
         content_by_lua '
             local checkups = require "resty.checkups"
-            checkups.create_checker()
-            ngx.sleep(2)
 
             local callback = function(host, port)
                 local res = ngx.location.capture("/" .. port)
@@ -305,8 +301,6 @@ unknown skey ups3
     location = /t {
         content_by_lua '
             local checkups = require "resty.checkups"
-            checkups.create_checker()
-            ngx.sleep(2)
 
             local callback = function(host, port)
                 local res = ngx.location.capture("/" .. port)
@@ -372,8 +366,6 @@ unknown skey ups3
     location = /t {
         content_by_lua '
             local checkups = require "resty.checkups"
-            checkups.create_checker()
-            ngx.sleep(2)
 
             local callback = function(host, port)
                 local res = ngx.location.capture("/" .. port)
@@ -436,8 +428,6 @@ GET /t
     location = /t {
         content_by_lua '
             local checkups = require "resty.checkups"
-            checkups.create_checker()
-            ngx.sleep(2)
 
             local callback = function(host, port)
                 local res = ngx.location.capture("/" .. port)
@@ -508,8 +498,6 @@ unknown skey new_ups
     location = /t {
         content_by_lua '
             local checkups = require "resty.checkups"
-            checkups.create_checker()
-            ngx.sleep(2)
 
             local callback = function(host, port)
                 local res = ngx.location.capture("/" .. port)
@@ -609,8 +597,6 @@ unknown skey new_ups
     location = /t {
         content_by_lua '
             local checkups = require "resty.checkups"
-            checkups.create_checker()
-            ngx.sleep(2)
 
             local callback = function(host, port)
                 local res = ngx.location.capture("/" .. port)

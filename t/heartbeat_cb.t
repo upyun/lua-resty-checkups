@@ -39,6 +39,11 @@ our $HttpConfig = qq{
             return 404;
         }
     }
+
+    init_worker_by_lua '
+        local checkups = require "resty.checkups"
+        checkups.create_checker()
+    ';
 };
 
 our $InitConfig = qq{
@@ -89,7 +94,6 @@ __DATA__
         access_log off;
         content_by_lua '
             local checkups = require "resty.checkups"
-            checkups.create_checker()
             ngx.sleep(2)
             local cb_ok = function(host, port)
                 ngx.say(host .. ":" .. port)
@@ -132,7 +136,6 @@ down
         access_log off;
         content_by_lua '
             local checkups = require "resty.checkups"
-            checkups.create_checker()
             ngx.sleep(12)
             local cb_ok = function(host, port)
                 ngx.say(host .. ":" .. port)

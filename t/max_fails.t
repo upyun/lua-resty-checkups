@@ -41,6 +41,11 @@ our $HttpConfig = qq{
         checkups.prepare_checker(config)
     ';
 
+    init_worker_by_lua '
+        local checkups = require "resty.checkups"
+        checkups.create_checker()
+    ';
+
 };
 
 $ENV{TEST_NGINX_CHECK_LEAK} = 1;
@@ -60,7 +65,6 @@ __DATA__
         access_log off;
         content_by_lua '
             local checkups = require "resty.checkups"
-            checkups.create_checker()
 
             local res = checkups.ready_ok("s1", function(host, port)
                 local r = ngx.location.capture("/a", { args = { host = host, port = port, code = 200 } })
@@ -124,7 +128,6 @@ GET /t
         access_log off;
         content_by_lua '
             local checkups = require "resty.checkups"
-            checkups.create_checker()
 
             for i=1, 5 do
                 local res = checkups.ready_ok("s2", function(host, port)
@@ -171,7 +174,6 @@ GET /t
         access_log off;
         content_by_lua '
             local checkups = require "resty.checkups"
-            checkups.create_checker()
 
             for i=1, 5 do
                 local res = checkups.ready_ok("s3", function(host, port)
