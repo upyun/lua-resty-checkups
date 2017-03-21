@@ -50,6 +50,11 @@ our $HttpConfig = qq{
         checkups.prepare_checker(config)
     ';
 
+    init_worker_by_lua '
+        local checkups = require "resty.checkups"
+        checkups.create_checker()
+    ';
+
 };
 
 $ENV{TEST_NGINX_CHECK_LEAK} = 1;
@@ -69,7 +74,6 @@ __DATA__
         access_log off;
         content_by_lua '
             local checkups = require "resty.checkups"
-            checkups.create_checker()
             ngx.sleep(2)
             local cb_ok = function(host, port)
                 ngx.say(host .. ":" .. port)

@@ -38,6 +38,10 @@ our $HttpConfig1 = qq{
         checkups.prepare_checker(config)
     ';
 
+    init_worker_by_lua '
+        local checkups = require "resty.checkups"
+        checkups.create_checker()
+    ';
 };
 
 
@@ -60,8 +64,6 @@ __DATA__
         error_log  logs/error11.log debug;
         content_by_lua_block {
             local checkups = require "resty.checkups"
-            checkups.create_checker()
-            ngx.sleep(3)
 
             local cb_ok = function(host, port)
                 local sock = ngx.socket.tcp()
@@ -102,8 +104,6 @@ type ok: nil 127.0.0.1 12360 err: try_timeout excceed
         error_log  logs/error22.log debug;
         content_by_lua_block {
             local checkups = require "resty.checkups"
-            checkups.create_checker()
-            ngx.sleep(3)
 
             local h, p
             local cb_ok = function(host, port)
@@ -144,8 +144,6 @@ type ok: nil 127.0.0.1 12360 err: try_timeout excceed
         error_log  logs/error33.log debug;
         content_by_lua_block {
             local checkups = require "resty.checkups"
-            checkups.create_checker()
-            ngx.sleep(3)
 
             local h, p
             local cb_ok = function(host, port)

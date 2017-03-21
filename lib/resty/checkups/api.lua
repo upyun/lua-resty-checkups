@@ -155,6 +155,11 @@ end
 
 
 function _M.create_checker()
+    local phase = get_phase()
+    if phase ~= "init_worker" then
+        error("create_checker must be called in init_worker phase")
+    end
+
     if not base.upstream.initialized then
         log(ERR, "create checker failed, call prepare_checker in init_by_lua")
         return
@@ -174,50 +179,26 @@ function _M.create_checker()
         base.ups_status_timer_created = true
     end
 
-    local ckey = base.CHECKUP_TIMER_KEY
-    local val, err = mutex:get(ckey)
-    if val then
+    if not worker_id then
+        log(ERR, "ngx_http_lua_module version too low, no heartbeat timer will be created")
+        return
+    elseif worker_id() ~= 0 then
         return
     end
 
-    if err then
-        log(WARN, "failed to get key from shm: ", err)
-        return
-    end
-
-    -- Pass timeout=0 to lock:new, so the lock method can return immediately
-    -- without waiting if it cannot acquire the lock right away.
-    -- By doing this, we can use lock:lock() in init_worker phase
-    -- because no ngx.sleep call is made, which is disabled in the context.
-    local lock_timeout = get_phase() == "init_worker" and 0 or nil
-
-    local lock = base.get_lock(ckey, lock_timeout)
-    if not lock then
-        log(WARN, "failed to acquire the lock: ", err)
-        return
-    end
-
-    val, err = mutex:get(ckey)
-    if val then
-        base.release_lock(lock)
-        return
-    end
-
-    -- create active checkup timer
+    -- only worker 0 will create heartbeat timer
     local ok, err = ngx.timer.at(0, heartbeat.active_checkup)
     if not ok then
         log(WARN, "failed to create timer: ", err)
-        base.release_lock(lock)
         return
     end
 
+    local ckey = base.CHECKUP_TIMER_KEY
     local overtime = base.upstream.checkup_timer_overtime
     local ok, err = mutex:set(ckey, 1, overtime)
     if not ok then
         log(WARN, "failed to update shm: ", err)
     end
-
-    base.release_lock(lock)
 end
 
 

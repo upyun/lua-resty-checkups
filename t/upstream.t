@@ -41,9 +41,10 @@ our $HttpConfig = qq{
     }
 
     init_worker_by_lua '
-        local config = require "config_ups"
         local checkups = require "resty.checkups"
+        local config = require "config_ups"
         checkups.prepare_checker(config)
+        checkups.create_checker()
     ';
 
 };
@@ -75,7 +76,6 @@ __DATA__
             ngx.say(srvs[1].down)
             ngx.say(srvs[2].down)
 
-            checkups.create_checker()
             ngx.sleep(2)
 
             local srvs = upstream.get_primary_peers("api.com")
