@@ -102,12 +102,13 @@ __DATA__
 
             -- add server to backup level
             ok, err = checkups.update_upstream("ups1", {
+                cluster = {
                     {
                         servers = {
                             {host="127.0.0.1", port=12353},
                         }
                     },
-                })
+                }})
             if err then ngx.say(err) end
             ngx.sleep(1)
             ok, err = checkups.ready_ok("ups1", callback)
@@ -115,13 +116,14 @@ __DATA__
 
             -- add server to primary level
             ok, err = checkups.update_upstream("ups1", {
+                cluster = {
                     {
                         servers = {
                             {host="127.0.0.1", port=12353},
                             {host="127.0.0.1", port=12350},
                         }
                     },
-                })
+                }})
             if err then ngx.say(err) end
             ngx.sleep(1)
             ok, err = checkups.ready_ok("ups1", callback)
@@ -131,12 +133,13 @@ __DATA__
 
             -- add server to primary level, ups2, server exists
             ok, err = checkups.update_upstream("ups2", {
+                cluster = {
                     {
                         servers = {
                             {host="127.0.0.1", port=12350},
                         }
                     },
-                })
+                }})
             if err then ngx.say(err) end
             ngx.sleep(1)
             ok, err = checkups.ready_ok("ups2", callback)
@@ -144,13 +147,14 @@ __DATA__
 
             -- add server to primary level, ups2, reset rr state
             ok, err = checkups.update_upstream("ups2", {
+                cluster = {
                     {
                         servers = {
                             {host="127.0.0.1", port=12350},
                             {host="127.0.0.1", port=12351},
                         }
                     },
-                })
+                }})
             if err then ngx.say(err) end
             ngx.sleep(1)
             ok, err = checkups.ready_ok("ups2", callback)
@@ -214,13 +218,14 @@ no servers available
 
             -- add server to primary level, ups2, reset rr state
             ok, err = checkups.update_upstream("ups2", {
+                cluster = {
                     {
                         servers = {
                             {host="127.0.0.1", port=12350},
                             {host="127.0.0.1", port=12351},
                         }
                     },
-                })
+                }})
             if err then ngx.say(err) end
             ngx.sleep(1)
             ok, err = checkups.ready_ok("ups2", callback)
@@ -249,13 +254,14 @@ no servers available
 
             -- add server to primary level, ups3, reset rr state
             ok, err = checkups.update_upstream("ups3", {
+                cluster = {
                     {
                         servers = {
                             {host="127.0.0.1", port=12352},
                             {host="127.0.0.1", port=12353},
                         }
                     },
-                })
+                }})
             if err then ngx.say(err) end
             ngx.sleep(1)
             ok, err = checkups.ready_ok("ups3", callback)
@@ -321,12 +327,13 @@ unknown skey ups3
 
             -- add server to primary level
             ok, err = checkups.update_upstream("ups3", {
+                cluster = {
                     {
                         servers = {
                             {host="127.0.0.1", port=12352},
                         }
                     },
-                })
+                }})
             if err then ngx.say(err) end
             ngx.sleep(1)
 
@@ -375,6 +382,7 @@ unknown skey ups3
 
             local ok, err
             ok, err = checkups.update_upstream("ups2", {
+                cluster = {
                     {
                         servers = {
                             {host="127.0.0.1", port=12350},
@@ -383,7 +391,7 @@ unknown skey ups3
                             {host="127.0.0.1", port=12353},
                         }
                     },
-                })
+                }})
             if err then ngx.say(err) end
 
             ngx.sleep(1)
@@ -441,6 +449,7 @@ GET /t
             if err then ngx.say(err) end
 
             ok, err = checkups.update_upstream("new_ups", {
+                cluster = {
                     {
                         servers = {
                             {host="127.0.0.1", port=12350},
@@ -449,7 +458,7 @@ GET /t
                             {host="127.0.0.1", port=12353},
                         }
                     },
-                })
+                }})
             if err then ngx.say(err) end
 
             ngx.sleep(1)
@@ -511,6 +520,7 @@ unknown skey new_ups
             if err then ngx.say(err) end
 
             ok, err = checkups.update_upstream("new_ups", {
+                cluster = {
                     {
                         servers = {
                             {host="127.0.0.1", port=12350},
@@ -519,7 +529,7 @@ unknown skey new_ups
                             {host="127.0.0.1", port=12353},
                         }
                     },
-                })
+                }})
             if err then ngx.say(err) end
 
             ok, err = checkups.delete_upstream("new_ups")
@@ -536,6 +546,7 @@ unknown skey new_ups
             if err then ngx.say(err) end
 
             ok, err = checkups.update_upstream("new_ups", {
+                cluster = {
                     {
                         servers = {
                             {host="127.0.0.1", port=12352},
@@ -543,7 +554,7 @@ unknown skey new_ups
                             {host="127.0.0.1", port=12350},
                         }
                     },
-                })
+                }})
             if err then ngx.say(err) end
             ngx.sleep(1)
 
@@ -607,13 +618,14 @@ unknown skey new_ups
             local ok, err
 
             ok, err = checkups.update_upstream("new_ups", {
+                cluster = {
                     {
                         servers = {
                             {host="127.0.0.1", port=12350},
                             {host="127.0.0.1", port=12351},
                         }
                     },
-                })
+                }})
             if err then ngx.say(err) end
 
             ngx.sleep(1)
@@ -625,6 +637,7 @@ unknown skey new_ups
             if err then ngx.say(err) end
 
             ok, err = checkups.update_upstream("new_ups", {
+                cluster = {
                     {
                         servers = {
                             {host="127.0.0.1", port=12350},
@@ -633,7 +646,7 @@ unknown skey new_ups
                             {host="127.0.0.1", port=12353},
                         }
                     },
-                })
+                }})
 
             ngx.sleep(1)
 
@@ -658,13 +671,14 @@ unknown skey new_ups
             if err then ngx.say(err) end
 
             ok, err = checkups.update_upstream("new_ups", {
+                cluster = {
                     {
                         servers = {
                             {host="127.0.0.1", port=12352},
                             {host="127.0.0.1", port=12353},
                         }
                     },
-                })
+                }})
 
             ngx.sleep(1)
 
@@ -722,6 +736,7 @@ unknown skey new_ups
             end
 
             local ok, err = checkups.update_upstream("ups2", {
+                cluster = {
                     {
                         servers = {
                             {host="127.0.0.1", port=12350},
@@ -730,7 +745,7 @@ unknown skey new_ups
                             {host="127.0.0.1", port=12353},
                         }
                     },
-                })
+                }})
             if err then ngx.say(err) end
 
             ngx.sleep(1)

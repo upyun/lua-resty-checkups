@@ -92,7 +92,7 @@ function _M.prepare_checker(config)
                     if phase == "init" or
                         phase == "init_worker" and worker_id() == 0 then
                         local key = dyconfig._gen_shd_key(skey)
-                        shd_config:set(key, cjson.encode(base.upstream.checkups[skey].cluster))
+                        shd_config:set(key, cjson.encode(base.upstream.checkups[skey]))
                     end
                     skeys[skey] = 1
                 else
@@ -212,8 +212,12 @@ function _M.update_upstream(skey, upstream)
         return false, "can not set empty upstream"
     end
 
+    if not upstream.cluster or not next(upstream.cluster) then
+        return false, "can not set empty servers"
+    end
+
     local ok, err
-    for level, cls in pairs(upstream) do
+    for level, cls in pairs(upstream.cluster) do
         if not cls or not next(cls) then
             return false, "can not update empty level"
         end

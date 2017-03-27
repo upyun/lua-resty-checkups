@@ -81,12 +81,7 @@ local function shd_config_syncer(premature)
                 log(INFO, "get ", skey, " from shm: ", shd_servers)
                 if shd_servers then
                     shd_servers = cjson.decode(shd_servers)
-                    -- add new skey
-                    if not base.upstream.checkups[skey] then
-                        base.upstream.checkups[skey] = {}
-                    end
-
-                    base.upstream.checkups[skey].cluster = base.table_dup(shd_servers)
+                    base.upstream.checkups[skey] = base.table_dup(shd_servers)
                 elseif err then
                     success = false
                     log(WARN, "failed to get from shm: ", err)
