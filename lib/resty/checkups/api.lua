@@ -2,8 +2,6 @@
 
 local cjson      = require "cjson.safe"
 
-local consistent_hash = require "resty.checkups.consistent_hash"
-local round_robin     = require "resty.checkups.round_robin"
 local heartbeat       = require "resty.checkups.heartbeat"
 local dyconfig        = require "resty.checkups.dyconfig"
 local base            = require "resty.checkups.base"
