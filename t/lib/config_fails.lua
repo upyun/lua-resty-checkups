@@ -12,7 +12,7 @@ _M.s1 = {
     try = 1,
     http_opts = {
         statuses = {
-            [502] = false,
+            ["502"] = false,
         },
     },
 
@@ -37,7 +37,7 @@ _M.s2 = {
     try = 1,
     http_opts = {
         statuses = {
-            [502] = false,
+            ["502"] = false,
         },
     },
 
@@ -57,7 +57,7 @@ _M.s3 = {
     try = 1,
     http_opts = {
         statuses = {
-            [502] = false,
+            ["502"] = false,
         },
     },
 
