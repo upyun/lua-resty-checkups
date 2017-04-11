@@ -248,10 +248,10 @@ An example configuration file of checkups is shown below,
             http_opts = {
             query = "GET /status HTTP/1.1\r\nHost: localhost\r\n\r\n",
             statuses = {
-                    [500] = false,
-                    [502] = false,
-                    [503] = false,
-                    [504] = false,
+                    ["500"] = false,
+                    ["502"] = false,
+                    ["503"] = false,
+                    ["504"] = false,
             },
         },
 

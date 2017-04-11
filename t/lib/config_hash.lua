@@ -13,7 +13,7 @@ _M.hash = {
     http_opts = {
         query = "GET /status HTTP/1.1\r\nHost: localhost\r\n\r\n",
         statuses = {
-            [502] = false,
+            ["502"] = false,
         },
     },
 
