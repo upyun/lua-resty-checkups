@@ -14,6 +14,7 @@ local WARN          = ngx.WARN
 local INFO          = ngx.INFO
 
 local str_format    = string.format
+local type          = type
 
 local _M = {
     _VERSION = "0.11",
@@ -134,6 +135,32 @@ function _M.check_update_server_args(skey, level, server)
 
     return true
 end
+
+
+function _M.do_get_upstream(skey)
+    local skeys = shd_config:get(base.SKEYS_KEY)
+    if not skeys then
+        return nil, "no skeys found from shm"
+    end
+
+    local key = _gen_shd_key(skey)
+    local shd_servers, err = shd_config:get(key)
+    if shd_servers then
+        shd_servers = cjson.decode(shd_servers)
+        if type(shd_servers) ~= "table" then
+            return nil
+        end
+
+        return shd_servers
+    elseif err then
+        log(WARN, "failed to get from shm: ", err)
+        return nil, err
+    else
+        log(WARN, "upstream " .. skey .. " not found")
+        return nil
+    end
+end
+
 
 
 function _M.do_update_upstream(skey, upstream)
