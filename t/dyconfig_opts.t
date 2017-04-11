@@ -78,7 +78,7 @@ run_tests();
 
 __DATA__
 
-=== TEST 1: consistent hash
+=== TEST 1: rr to consistent hash
 --- http_config eval: $::HttpConfig
 --- config
     location = /t {
@@ -119,12 +119,63 @@ __DATA__
 --- request
 GET /t
 --- response_body
-127.0.0.1:12354
+127.0.0.1:12355
+127.0.0.1:12356
 127.0.0.1:12355
 127.0.0.1:12356
 127.0.0.1:12354
 127.0.0.1:12354
 127.0.0.1:12354
 127.0.0.1:12354
+--- timeout: 10
+
+
+=== TEST 2: consistent hash continue
+--- http_config eval: $::HttpConfig
+--- config
+    location = /t {
+        access_log off;
+        content_by_lua '
+            local checkups = require "resty.checkups"
+            ngx.sleep(1)
+
+            local config = require "config_dyconfig_opts"
+
+            local cb_ok = function(host, port)
+                ngx.say(host .. ":" .. port)
+                return 1
+            end
+
+            -- update_upstream to hash
+            ok, err = checkups.update_upstream("dyconfig", config.dyconfig_hash)
+            if err then ngx.say(err) end
+            ngx.sleep(2)
+
+            local ok, err = checkups.ready_ok("dyconfig", cb_ok, {hash_key = "/ab"})
+            local ok, err = checkups.ready_ok("dyconfig", cb_ok, {hash_key = "/ab"})
+            local ok, err = checkups.ready_ok("dyconfig", cb_ok, {hash_key = "/abc"})
+            local ok, err = checkups.ready_ok("dyconfig", cb_ok, {hash_key = "/abc"})
+
+            -- update_upstream
+            ok, err = checkups.update_upstream("dyconfig", config.dyconfig_rr.cluster)
+            if err then ngx.say(err) end
+            ngx.sleep(2)
+
+            local ok, err = checkups.ready_ok("dyconfig", cb_ok, {hash_key = "/ab"})
+            local ok, err = checkups.ready_ok("dyconfig", cb_ok, {hash_key = "/ab"})
+            local ok, err = checkups.ready_ok("dyconfig", cb_ok, {hash_key = "/abc"})
+            local ok, err = checkups.ready_ok("dyconfig", cb_ok, {hash_key = "/abc"})
+        ';
+    }
+--- request
+GET /t
+--- response_body
 127.0.0.1:12354
+127.0.0.1:12354
+127.0.0.1:12354
+127.0.0.1:12354
+127.0.0.1:12355
+127.0.0.1:12355
+127.0.0.1:12355
+127.0.0.1:12355
 --- timeout: 10

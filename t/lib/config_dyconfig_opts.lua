@@ -19,7 +19,6 @@ _M.dyconfig_rr = {
     cluster = {
         {   -- level 1
             servers = {
-                { host = "127.0.0.1", port = 12354 },
                 { host = "127.0.0.1", port = 12355 },
                 { host = "127.0.0.1", port = 12356 },
             }
