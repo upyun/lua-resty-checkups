@@ -381,7 +381,7 @@ Select an available `peer` from cluster `skey` and call `callback(peer.host, pee
 The `opts` table accepts the following fields,
 
 * `cluster_key`: Try clusters by `cluster_key`. Checkups will try clusters on the order of `cluster_key`. `clusters_key` can be the name of the clusters or the level of the clusters. clusters eg: `{"cluster_name_A", "name_B", "name_C"}`. levels eg: `{3, 2, 1}`.
-* `hash_key`: Key used in `hash` balance mode. If not set, `ngx.req.uri` will be used.
+* `hash_key`: Key used in `hash` balance mode. If not set, `ngx.var.uri` will be used.
 * `try`: Retry will be no more than `try` times.
 * `try_timeout`: Limits the time during which a request can be responsed, likewise nginx `proxy_next_upstream_timeout`.
 
