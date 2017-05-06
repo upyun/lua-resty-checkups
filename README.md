@@ -304,7 +304,7 @@ Cluster configurations
 
 * `skey`: `_M.xxxxx`. `xxxxx` is the `skey`(service key) of this Cluster.
 * `enable`: Enable or disable heartbeats to servers. Default is `true`.
-* `typ`: Cluster type, must be one of `general`, `redis`, `mysql`, `http`. Default is `general`.
+* `type`: Cluster type, must be one of `general`, `redis`, `mysql`, `http`. Default is `general`.
 	* `general`: Heartbeat by TCP `sock:connect`.
 	* `redis`: Heartbeat by redis `PING`. [lua-resty-redis](https://github.com/openresty/lua-resty-redis) module is required.
 	* `mysql`: Heartbeat by mysql `db:connect`. [lua-resty-mysql](https://github.com/openresty/lua-resty-mysql) module is required.
