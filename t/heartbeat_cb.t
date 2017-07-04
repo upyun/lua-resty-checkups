@@ -54,6 +54,7 @@ our $InitConfig = qq{
         config.api.heartbeat = function(host, port, ups)
             return checkups.STATUS_ERR, "down"
         end
+        checkups.init(config)
         checkups.prepare_checker(config)
     ';
 };
@@ -71,6 +72,7 @@ our $_InitConfig = qq{
             end
             return checkups.STATUS_ERR, "down"
         end
+        checkups.init(config)
         checkups.prepare_checker(config)
     ';
 };

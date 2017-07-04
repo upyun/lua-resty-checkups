@@ -40,6 +40,12 @@ our $HttpConfig = qq{
         server 127.0.0.1:12357 backup;
     }
 
+    init_by_lua '
+        local config = require "config_ups"
+        local checkups = require "resty.checkups"
+        checkups.init(config)
+    ';
+
     init_worker_by_lua '
         local checkups = require "resty.checkups"
         local config = require "config_ups"

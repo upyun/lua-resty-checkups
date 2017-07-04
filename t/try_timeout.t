@@ -35,6 +35,7 @@ our $HttpConfig1 = qq{
     init_by_lua '
         local config = require "config_timeout"
         local checkups = require "resty.checkups"
+        checkups.init(config)
         checkups.prepare_checker(config)
     ';
 

@@ -44,6 +44,7 @@ our $HttpConfig = qq{
         local config = require "config_api"
         local checkups = require "resty.checkups"
         config.api.sensibility = 2
+        checkups.init(config)
         checkups.prepare_checker(config)
     ';
 
