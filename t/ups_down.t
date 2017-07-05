@@ -39,6 +39,12 @@ our $HttpConfig = qq{
         server 127.0.0.1:12356;
     }
 
+    init_by_lua '
+        local config = require "config_down"
+        local checkups = require "resty.checkups"
+        checkups.init(config)
+    ';
+
     init_worker_by_lua '
         local config = require "config_down"
         local checkups = require "resty.checkups"

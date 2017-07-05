@@ -58,6 +58,7 @@ our $InitConfig = qq{
     init_by_lua '
         local config = require "config_round_robin"
         local checkups = require "resty.checkups"
+        checkups.init(config)
         checkups.prepare_checker(config)
     ';
 };

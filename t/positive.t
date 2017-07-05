@@ -43,6 +43,7 @@ our $HttpConfig = qq{
     init_by_lua '
         local config = require "config_api"
         local checkups = require "resty.checkups"
+        checkups.init(config)
         checkups.prepare_checker(config)
     ';
 

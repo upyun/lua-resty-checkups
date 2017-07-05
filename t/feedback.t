@@ -30,11 +30,13 @@ our $HttpConfig = qq{
     init_by_lua '
         local config = require "config_feedback"
         local checkups = require "resty.checkups"
-        checkups.prepare_checker(config)
+        checkups.init(config)
     ';
 
     init_worker_by_lua '
+        local config = require "config_feedback"
         local checkups = require "resty.checkups"
+        checkups.prepare_checker(config)
         checkups.create_checker()
     ';
 

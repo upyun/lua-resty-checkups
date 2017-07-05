@@ -58,11 +58,13 @@ our $HttpConfig = qq{
     init_by_lua '
         local config = require "config_dyconfig_opts"
         local checkups = require "resty.checkups"
-        checkups.prepare_checker({global = config.global})
+        checkups.init({global = config.global})
     ';
 
     init_worker_by_lua '
+        local config = require "config_dyconfig_opts"
         local checkups = require "resty.checkups"
+        checkups.prepare_checker({global = config.global})
         checkups.create_checker()
     ';
 
