@@ -18,6 +18,7 @@ Table of Contents
     * [cluster configurations](#cluster-configuration)
     * [Nginx configuration](#nginx-configuration)
 * [API](#api)
+    * [init](#init)
     * [prepare_checker](#prepare_checker)
     * [create_checker](#create_checker)
     * [ready_ok](#ready_ok)
@@ -95,6 +96,12 @@ Synopsis
     server {
         listen 12351;
         return 200 12351;
+    }
+    
+    init_by_lua_block {
+    	local config = require "config"
+    	local checkups = require "resty.checkups.api"
+    	checkups.init(config)
     }
 
     init_worker_by_lua_block {
@@ -350,14 +357,23 @@ API
 
 ![](lua-resty-checkups+API.png)
 
+init
+---------------
+**syntax:** *init(config)*
+
+**phase:** *init_by_lua*
+
+Copy upstreams from `config.lua` to shdict, extract servers from Nginx upstream blocks and do some basic initialization.
+
+
 prepare_checker
 ---------------
 
 **syntax:** *prepare_checker(config)*
 
-**phase:** *init_by_lua init_worker_by_lua*
+**phase:** *init_worker_by_lua*
 
-Copy configurations from `config.lua` to checkups, extract servers from Nginx upstream blocks and do some basic initialization. This method can be called in `init` phase or `init_worker` phase. If you want to extract servers from Nginx upstream blocks, then you must call this method in `init_worker` phase.
+Copy configurations from `config.lua` to worker checkups, extract servers from Nginx upstream blocks and do some basic initialization. 
 
 
 create_checker
