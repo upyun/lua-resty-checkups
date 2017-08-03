@@ -319,6 +319,14 @@ Cluster configurations
 * `timeout`: Connect timeout to upstream servers. Default is `5`.
 * `read_timeout`: Read timeout to upstream servers. Default is equal to `timeout`.
 * `send_timeout`: Write timeout to upstream servers. Default is equal to `timeout`.
+
+* `keepalive_timeout` : Keepalive timeout used to specify the maximal idle timeout (in milliseconds) for the current connection.
+* `keepalive_size` : Keepalive size used to specify the maximal number of connections allowed in the connection pool for the current server.
+
+* `protocol` : A client driver options for custom TCP-based protocol. 
+	* `module`: Name of a module which is intended to be compatible with the TCP API.
+	* `config`: A custom Lua table for the TCP-based protocol.
+
 * `http_opts`: HTTP heartbeat configurations. Only works for `typ="http"`.
 	* `query`: HTTP request to heartbeat.
 	* `statuses`: If the code returned by server is set to `false`, then the server is considered to be failing.
