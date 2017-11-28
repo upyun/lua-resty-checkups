@@ -21,6 +21,9 @@ local now           = ngx.now
 local tcp           = ngx.socket.tcp
 local update_time   = ngx.update_time
 
+local spawn         = ngx.thread.spawn
+local wait          = ngx.thread.wait
+
 local get_shm       = subsystem.get_shm
 local mutex         = get_shm("mutex")
 local state         = get_shm("state")
@@ -444,8 +447,15 @@ function _M.active_checkup(premature)
         return
     end
 
+    local thread = {}
     for skey in pairs(base.upstream.checkups) do
-        cluster_heartbeat(skey)
+        thread[#thread + 1] = spawn(cluster_heartbeat, skey)
+    end
+
+    for _,v in ipairs(thread) do
+        if v then
+            wait(v)
+        end
     end
 
     local interval = base.upstream.checkup_timer_interval
