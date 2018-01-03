@@ -328,15 +328,15 @@ Cluster configurations
 * `cluster`: You can configure multiple levels according to the cluster priority, at each level you can configure a cluster of `servers`. Checkups will try next level only when all the servers in the prior level are consitered unavailable.
 
 	Instead of trying clusters by levels, you can configure checkups trying clusters by key(see `api` cluster above). Remember you should also pass extra argument like `opts.cluster_key={"dc1", "dc2"}` or `opts.cluster_key={3, 1, 2}` to [checkups.read_ok](#ready_ok) to make checkups trying on the order of `dc1`, `dc2` or `level 3`, `level 1`, `level 2`. If you haven't passed `opts.cluster_key` to [checkups.ready_ok](#ready_ok), checkups will still try clusters by levels. As for the above `api` cluster, checkups will eventually return `no servers available`.
-* `try`: Retry count. Default is the number of servers.
-* `try_timeout`: Limits the time during which a request can be responsed, likewise nginx `proxy_next_upstream_timeout`.
-* `servers`: Configuration for `servers` are listed as follows,
-	* `weight`: Sets the weight of the server. Default is `1`.
-	* `max_fails`: Sets the number of unsuccessful attempts to communicate with the server that should happen in the duration set by the `fail_timeout` parameter. By default, the number of unsuccessful attempts is set to `0`, which disables the accounting of attempts. What is considered an unsuccessful attempt is defined by `http_opts.statuses` if `typ="http"` or a `nil`/`false` return by [checkups.ready_ok](#ready_ok). This options is only available in round-robin.
-	* `fail_timeout`: Sets the time during which the specified number of unsuccessful attempts to communicate with the server should happen to consider the server unavailable and the period of time the server will be considered unavailable. By default, the parameter is set to `10` seconds. This options is only available in round-robin.
-
-* `upstream`: Name of Nginx upstream blocks. Checkups will extract servers from Nginx conf's upstream blocks in [prepare_checker](#prepare_checker). [lua-upstream-nginx-module](https://github.com/openresty/lua-upstream-nginx-module) module is required.
-* `upstream_only_backup`: If set to `true`, checkups will only extract backup servers from Nginx upstream blocks.
+    * `try`: Retry count. Default is the number of servers.
+    * `try_timeout`: Limits the time during which a request can be responsed, likewise nginx `proxy_next_upstream_timeout`.
+    * `servers`: Configuration for `servers` are listed as follows,
+    	* `weight`: Sets the weight of the server. Default is `1`.
+    	* `max_fails`: Sets the number of unsuccessful attempts to communicate with the server that should happen in the duration set by the `fail_timeout` parameter. By default, the number of unsuccessful attempts is set to `0`, which disables the accounting of attempts. What is considered an unsuccessful attempt is defined by `http_opts.statuses` if `typ="http"` or a `nil`/`false` return by [checkups.ready_ok](#ready_ok). This options is only available in round-robin.
+    	* `fail_timeout`: Sets the time during which the specified number of unsuccessful attempts to communicate with the server should happen to consider the server unavailable and the period of time the server will be considered unavailable. By default, the parameter is set to `10` seconds. This options is only available in round-robin.
+    
+    * `upstream`: Name of Nginx upstream blocks. Checkups will extract servers from Nginx conf's upstream blocks in [prepare_checker](#prepare_checker). [lua-upstream-nginx-module](https://github.com/openresty/lua-upstream-nginx-module) module is required.
+    * `upstream_only_backup`: If set to `true`, checkups will only extract backup servers from Nginx upstream blocks.
 
 
 Nginx configuration
