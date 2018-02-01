@@ -170,6 +170,16 @@ function _M.get_ups_timeout(skey)
 end
 
 
+function _M.get_ups(skey)
+    if not skey then
+        return
+    end
+
+    local ups = base.upstream.checkups[skey]
+    return ups
+end
+
+
 function _M.create_checker()
     local phase = get_phase()
     if phase ~= "init_worker" then
@@ -233,14 +243,25 @@ local function gen_upstream(skey, upstream)
             return nil, "cluster invalid"
         end
     else
-        -- only servers
         local dyupstream, err = dyconfig.do_get_upstream(skey)
         if err then
             return nil, err
         end
 
         dyupstream = dyupstream or {}
-        dyupstream.cluster = upstream
+        if upstream.servers then
+            -- store config
+            for k, v in pairs(upstream) do
+                if k ~= "servers" then
+                    dyupstream[k] = v
+                else
+                    dyupstream.cluster = { { servers = v } }
+                end
+            end
+        else
+            -- only cluster
+            dyupstream.cluster = upstream
+        end
         ups = dyupstream
     end
 
@@ -318,6 +339,16 @@ function _M.delete_upstream(skey)
     base.release_lock(lock)
 
     return ok, err
+end
+
+
+function _M.try_register(name, module)
+    return try.register(name, module)
+end
+
+
+function _M.try_unregister(name)
+    return try.unregister(name)
 end
 
 
