@@ -351,7 +351,7 @@ Add pathes of lua config file and checkups to `lua_package_path` and create lua 
     lua_shared_dict locks 1m;
     lua_shared_dict config 10m;
 
-if you use stream subsystem, you should put these lines into `stream` block of your Nginx config file.
+If you use stream subsystem, you should put these lines into `stream` block of your Nginx config file.
 
     lua_package_path "/path/to/lua-resty-checkups/lib/?.lua;/path/to/config.lua;;";
 
