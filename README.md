@@ -317,8 +317,8 @@ Cluster configurations
     * `mysql`: Heartbeat by mysql `db:connect`. [lua-resty-mysql](https://github.com/openresty/lua-resty-mysql) module is required.
     * `http`: Heartbeat by HTTP request. You can setup customized HTTP request and response codes in `http_opts`.
 * `timeout`: Connect timeout to upstream servers. Default is `5`.
-* `read_timeout`: Read timeout to upstream servers. Default is equal to `timeout`.
-* `send_timeout`: Write timeout to upstream servers. Default is equal to `timeout`.
+* `read_timeout`: Read timeout to upstream servers (not used during heartbeating). Default is equal to `timeout`.
+* `send_timeout`: Write timeout to upstream servers (not used during heartbeating). Default is equal to `timeout`.
 * `http_opts`: HTTP heartbeat configurations. Only works for `typ="http"`.
     * `query`: HTTP request to heartbeat.
     * `statuses`: If the code returned by server is set to `false`, then the server is considered to be failing.
