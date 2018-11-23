@@ -311,6 +311,7 @@ Cluster configurations
 
 * `skey`: `_M.xxxxx`. `xxxxx` is the `skey`(service key) of this Cluster.
 * `enable`: Enable or disable heartbeats to servers. Default is `true`.
+* `dns`: Enable dns resolver to servers.  Default is `false`.
 * `typ`: Cluster type, must be one of `general`, `redis`, `mysql`, `http`. Default is `general`.
     * `general`: Heartbeat by TCP `sock:connect`.
     * `redis`: Heartbeat by redis `PING`. [lua-resty-redis](https://github.com/openresty/lua-resty-redis) module is required.
@@ -334,6 +335,7 @@ Cluster configurations
         * `weight`: Sets the weight of the server. Default is `1`.
         * `max_fails`: Sets the number of unsuccessful attempts to communicate with the server that should happen in the duration set by the `fail_timeout` parameter. By default, the number of unsuccessful attempts is set to `0`, which disables the accounting of attempts. What is considered an unsuccessful attempt is defined by `http_opts.statuses` if `typ="http"` or a `nil`/`false` returned by [checkups.ready_ok](#ready_ok). This options is only available in round-robin.
         * `fail_timeout`: Sets the time during which the specified number of unsuccessful attempts to communicate with the server should happen to consider the server unavailable and the period of time the server will be considered unavailable. By default, the parameter is set to `10` seconds. This options is only available in round-robin.
+        * `dns`: Enable dns resolver to server.  Default is `cluster.dns`.
 
     * `upstream`: Name of Nginx upstream blocks. Checkups will extract servers from Nginx conf's upstream blocks in [prepare_checker](#prepare_checker). [lua-upstream-nginx-module](https://github.com/openresty/lua-upstream-nginx-module) module is required.
     * `upstream_only_backup`: If set to `true`, checkups will only extract backup servers from Nginx upstream blocks.
@@ -377,11 +379,22 @@ Copy upstreams from `config.lua` to shdict, extract servers from Nginx upstream 
 prepare_checker
 ---------------
 
-**syntax:** *prepare_checker(config)*
+**syntax:** *prepare_checker(dns_config_getter)*
 
 **phase:** *init_worker_by_lua*
 
 Copy configurations from `config.lua` to worker checkups, extract servers from Nginx upstream blocks and do some basic initialization.
+
+```
+default_config_getter = {
+    nameservers = {"8.8.8.8", {"8.8.4.4", 53} },
+    retrans = 5,    -- 5 retransmissions on receive timeout
+    timeout = 2000, -- 2 sec
+    interval = 30,  -- timer interval
+}
+```
+
+type of `dns_config_getter` can be `function` or `table`. Default is `default_config_getter`.
 
 
 create_checker
