@@ -19,6 +19,13 @@ local wait      = ngx.thread.wait
 
 local _M = {}
 local dns_config_getter
+local default_config = {
+    nameservers = {"8.8.8.8", {"8.8.4.4", 53} },
+    retrans = 5,    -- 5 retransmissions on receive timeout
+    timeout = 2000, -- 2 sec
+    interval = 30,  -- timer interval
+}
+
 
 local function update_ips(domain_diff, domain_map)
     local lock, err = base.get_lock(base.SKEYS_KEY)
@@ -55,7 +62,7 @@ local function update_ips(domain_diff, domain_map)
                     end
                 end
             end
-            
+
             if should_update_servers then
                 local new_servers = {}
                 local index = 1
@@ -178,7 +185,15 @@ local function resolver_timer(premature)
         return
     end
 
-    local dns = dns_config_getter()
+    local dns
+    if type(dns_config_getter) == "table" then
+        dns = dns_config_getter
+    elseif type(dns_config_getter) == "function" then
+        dns = dns_config_getter()
+    end
+
+    dns = dns or default_config
+
     local domains = get_domains()
     local interval = dns.interval or 30
 
@@ -208,8 +223,8 @@ local function resolver_timer(premature)
     end
 end
 
-function _M.create_timer(dns_config_getter)
-    dns_config_getter = dns_config_getter
+function _M.create_timer(dns_config)
+    dns_config_getter = dns_config
 
     local ok, err = timer_at(0, resolver_timer)
     if not ok then
