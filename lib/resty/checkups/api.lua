@@ -6,6 +6,7 @@ local heartbeat       = require "resty.checkups.heartbeat"
 local dyconfig        = require "resty.checkups.dyconfig"
 local base            = require "resty.checkups.base"
 local try             = require "resty.checkups.try"
+local dns             = require "resty.checkups.dns"
 local subsystem       = require "resty.subsystem"
 
 local str_format = string.format
@@ -180,7 +181,7 @@ function _M.get_ups(skey)
 end
 
 
-function _M.create_checker()
+function _M.create_checker(dns_config_getter)
     local phase = get_phase()
     if phase ~= "init_worker" then
         error("create_checker must be called in init_worker phase")
@@ -199,7 +200,7 @@ function _M.create_checker()
     if base.upstream.ups_status_sync_enable and not base.ups_status_timer_created then
         local ok, err = ngx.timer.at(0, base.ups_status_checker)
         if not ok then
-            log(WARN, "failed to create ups_status_checker: ", err)
+            log(ERR, "failed to create ups_status_checker: ", err)
             return
         end
         base.ups_status_timer_created = true
@@ -212,10 +213,11 @@ function _M.create_checker()
         return
     end
 
+    dns.create_timer(dns_config_getter)
     -- only worker 0 will create heartbeat timer
     local ok, err = ngx.timer.at(0, heartbeat.active_checkup)
     if not ok then
-        log(WARN, "failed to create timer: ", err)
+        log(ERR, "failed to create timer: ", err)
         return
     end
 

@@ -92,7 +92,7 @@ local function next_server(servers, peer_cb, opts)
 end
 
 
-local function gen_opts(ups, opts)
+local function gen_opts(ups, opts, skey)
     local key
     local mode = ups.mode
     if mode == "hash" then
@@ -107,8 +107,8 @@ local function gen_opts(ups, opts)
     return { hash_key=key }
 end
 
-function _M.ipairsrvs(servers, peer_cb, ups, opts)
-    local mopts = gen_opts(ups, opts)
+function _M.ipairsrvs(servers, peer_cb, ups, opts, skey)
+    local mopts = gen_opts(ups, opts, skey)
     return function() return next_server(servers, peer_cb, mopts) end
 end
 

@@ -205,7 +205,7 @@ function _M.try_cluster(skey, request_cb, opts)
        mode = str_sub(mode, to + 1)
     end
     local module = reg[mode]
-    print("mode:", mode, ", module:", tostring(module))
+--    print("mode:", mode, ", module:", tostring(module))
     local callbacks = prepare_callbacks(skey, ups, opts, module)
 
     local next_cluster_cb = callbacks.next_cluster_cb
@@ -233,7 +233,7 @@ function _M.try_cluster(skey, request_cb, opts)
     end
 
     local default_itercls = function(cls, peer_cb, request_cb, request_feedback)
-        for _, srv, opts, err in module.ipairsrvs(cls.servers, peer_cb, ups, opts) do
+        for _, srv, opts, err in module.ipairsrvs(cls.servers, peer_cb, ups, opts, skey) do
             if err then
                 log(ERR, str_format("iter err: %s", err))
                 return nil, err

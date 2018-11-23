@@ -5,6 +5,8 @@ local cjson         = require "cjson.safe"
 local base          = require "resty.checkups.base"
 local subsystem     = require "resty.subsystem"
 
+local type          = type
+local ipairs        = ipairs
 local str_sub       = string.sub
 local lower         = string.lower
 local tab_sort      = table.sort
@@ -109,7 +111,7 @@ local heartbeat = {
         sock:settimeout(ups.timeout * 1000)
         local ok, err = sock:connect(host, port)
         if not ok then
-            log(ERR, "failed to connect: ", id, ", ", err)
+            log(WARN, "failed to connect: ", id, ", ", err)
             return _M.STATUS_ERR, err
         end
 
@@ -141,7 +143,7 @@ local heartbeat = {
         local redis_err = { status = _M.STATUS_ERR, replication = cjson.null }
         local ok, err = red:connect(host, port)
         if not ok then
-            log(ERR, "failed to connect redis: ", id, ", ", err)
+            log(WARN, "failed to connect redis: ", id, ", ", err)
             return redis_err, err
         end
 
@@ -261,7 +263,7 @@ local heartbeat = {
         }
 
         if not ok then
-            log(ERR, "failed to connect: ", id, ", ", err, ": ", errno, " ", sqlstate)
+            log(WARN, "failed to connect: ", id, ", ", err, ": ", errno, " ", sqlstate)
             return _M.STATUS_ERR, err
         end
 
@@ -282,7 +284,7 @@ local heartbeat = {
         sock:settimeout(ups.timeout * 1000)
         local ok, err = sock:connect(host, port)
         if not ok then
-            log(ERR, "failed to connect: ", id, ", ", err)
+            log(WARN, "failed to connect: ", id, ", ", err)
             return _M.STATUS_ERR, err
         end
 
@@ -327,6 +329,26 @@ local heartbeat = {
         return _M.STATUS_OK
     end,
 }
+
+
+function _M.register(name, func)
+    if type(name) ~= "string" then
+        return false, "invalid name"
+    end
+
+    if type(func) ~= "function" then
+        return false, "invalid func"
+    end
+
+    heartbeat[name] = func
+    return true
+end
+
+
+function _M.unregister(name)
+    heartbeat[name] = nil
+    return true
+end
 
 
 local function cluster_heartbeat(skey)
@@ -472,7 +494,7 @@ function _M.active_checkup(premature)
 
     local ok, err = ngx.timer.at(interval, _M.active_checkup)
     if not ok then
-        log(WARN, "failed to create timer: ", err)
+        log(ERR, "failed to create timer: ", err)
         local ok, err = mutex:set(ckey, nil)
         if not ok then
             log(WARN, "failed to update shm: ", err)

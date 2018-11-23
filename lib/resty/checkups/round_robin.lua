@@ -17,11 +17,7 @@ local function next_server(servers, peer_cb)
     local srvs_cnt = #servers
 
     if srvs_cnt == 1 then
-        if peer_cb(1, servers[1]) then
-            return 1, servers[1], nil
-        end
-
-        return nil, nil, nil, "round robin: no servers available"
+        return 1, servers[1]
     end
 
     -- select round robin server
@@ -71,7 +67,7 @@ function _M.free_server(srv, failed)
 end
 
 
-function _M.ipairsrvs(servers, peer_cb, ups, opts)
+function _M.ipairsrvs(servers, peer_cb, ups, opts, skey)
     return function() return next_server(servers, peer_cb) end
 end
 

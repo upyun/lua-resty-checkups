@@ -307,6 +307,7 @@ function _M.extract_servers_from_upstream(skey, cls)
             weight = srv.weight,
             max_fails = srv.max_fails,
             fail_timeout = srv.fail_timeout,
+            down = srv.down,
         })
     end
 end
