@@ -212,9 +212,11 @@ local function resolver_timer(premature)
         end
     end
 
-    local domain_diff = get_domain_diff(pre_domain_map, domain_map)
-    if update_ips(domain_diff, domain_map) then
-        pre_domain_map = domain_map
+    if next(domain_map) then
+        local domain_diff = get_domain_diff(pre_domain_map, domain_map)
+        if update_ips(domain_diff, domain_map) then
+            pre_domain_map = domain_map
+        end
     end
 
     local ok, err = timer_at(interval, resolver_timer)
