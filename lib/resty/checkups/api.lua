@@ -245,7 +245,6 @@ local function gen_upstream(skey, upstream)
     end
 
     -- check servers
-    local ok
     for level, cls in pairs(ups.cluster) do
         if type(cls) ~= "table" or not next(cls) then
             return nil, "can not update empty level"
