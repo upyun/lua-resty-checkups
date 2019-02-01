@@ -11,6 +11,8 @@ Table of Contents
 * [Name](#name)
 * [Status](#status)
 * [Features](#features)
+* [Installation](#installation)
+* [Compatibility](#compatibility)
 * [Synopsis](#synopsis)
 * [Configuration](#configuration)
     * [Lua configuration](#lua-configuration)
@@ -44,6 +46,30 @@ Features
 * Balance by weighted round-robin or consistent-hash
 * Synchronize with Nginx upstream blocks
 * Try clusters by levels or by keys
+
+Installation
+============
+
+* [LuaRocks](https://luarocks.org/):
+
+```bash
+$ luarocks install lua-resty-checkups
+```
+
+* [OPM](https://github.com/openresty/opm):
+
+```bash
+$ opm get upyun/lua-resty-checkups
+```
+
+* Manually:
+
+Just tweeks the `lua_package_path` or the `LUA_PATH` environment variable, to add the installation path for this Lua module:
+
+```
+/path/to/lua-resty-checkups/lib/resty/?.lua;
+```
+
 
 Compatibility
 =============
