@@ -283,6 +283,7 @@ function _M.extract_servers_from_upstream(skey, cls)
     end
 
     local ups_backup = cls.upstream_only_backup
+    local ups_skip_down = cls.upstream_skip_down
     local srvs_getter = ngx_upstream.get_primary_peers
     if ups_backup then
         srvs_getter = ngx_upstream.get_backup_peers
@@ -294,6 +295,10 @@ function _M.extract_servers_from_upstream(skey, cls)
     end
 
     for _, srv in ipairs(srvs) do
+        if ups_skip_down and srv.down then
+            goto continue
+        end
+
         local host, port = extract_srv_host_port(srv.name)
         if not host then
             log(ERR, "invalid server name: ", srv.name)
@@ -308,6 +313,8 @@ function _M.extract_servers_from_upstream(skey, cls)
             max_fails = srv.max_fails,
             fail_timeout = srv.fail_timeout,
         })
+
+        ::continue::
     end
 end
 
