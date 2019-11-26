@@ -9,7 +9,7 @@ services:
 env:
     - V_OPENRESTY=1.9.15.1
 install:
-    - cpanm -v --notest Test::Nginx
+    - cpanm --mirror https://mirrors.163.com/cpan -v --notest Test::Nginx
 before_script:
     - sudo apt-get update -q
     - sudo apt-get install libreadline-dev libncurses5-dev libpcre3-dev libssl-dev -y
