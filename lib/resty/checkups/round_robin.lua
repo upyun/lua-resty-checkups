@@ -13,19 +13,16 @@ return:
     - (table) server
     - (string) error
 --]]
-function _M.next_round_robin_server(servers, peer_cb)
+local function next_server(servers, peer_cb)
     local srvs_cnt = #servers
 
     if srvs_cnt == 1 then
-        if peer_cb(1, servers[1]) then
-            return servers[1], nil
-        end
-
-        return nil, "round robin: no servers available"
+        return 1, servers[1]
     end
 
     -- select round robin server
     local best
+    local best_idx
     local max_weight
     local weight_sum = 0
     for idx = 1, srvs_cnt do
@@ -46,27 +43,32 @@ function _M.next_round_robin_server(servers, peer_cb)
             if not max_weight or srv.current_weight > max_weight then
                 max_weight = srv.current_weight
                 best = srv
+                best_idx = idx
             end
         end
     end
 
     if not best then
-        return nil, "round robin: no servers available"
+        return nil, nil, nil, "round robin: no servers available"
     end
 
     best.current_weight = best.current_weight - weight_sum
 
-    return best, nil
+    return best_idx, best
 end
 
 
-
-function _M.free_round_robin_server(srv, failed)
+function _M.free_server(srv, failed)
     if not failed then
         return
     end
 
     srv.effective_weight = ceil((srv.effective_weight or 1) / 2)
+end
+
+
+function _M.ipairsrvs(servers, peer_cb, ups, opts, skey)
+    return function() return next_server(servers, peer_cb) end
 end
 
 

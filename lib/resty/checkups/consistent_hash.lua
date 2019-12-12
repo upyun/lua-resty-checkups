@@ -4,6 +4,8 @@ local floor      = math.floor
 local str_byte   = string.byte
 local tab_sort   = table.sort
 local tab_insert = table.insert
+local ipairs     = ipairs
+local type       = type
 
 local _M = { _VERSION = "0.11" }
 
@@ -22,7 +24,7 @@ local function hash_string(str)
 end
 
 
-local function init_consistent_hash_state(servers)
+local function init_state(servers)
     local weight_sum = 0
     for _, srv in ipairs(servers) do
         weight_sum = weight_sum + (srv.weight or 1)
@@ -62,37 +64,52 @@ local function binary_search(circle, key)
 end
 
 
-function _M.next_consistent_hash_server(servers, peer_cb, hash_key)
-    local is_tab = require "resty.checkups.base".is_tab
-    servers.chash = is_tab(servers.chash) and servers.chash
-                    or init_consistent_hash_state(servers)
+local function next_server(servers, peer_cb, opts)
+    servers.chash = type(servers.chash) == "table" and servers.chash
+                    or init_state(servers)
 
     local chash = servers.chash
     if chash.members == 1 then
         if peer_cb(1, servers[1]) then
-            return servers[1]
+            return 1, servers[1]
         end
 
-        return nil, "consistent hash: no servers available"
+        return nil, nil, nil, "consistent hash: no servers available"
     end
 
     local circle = chash.circle
-    local st = binary_search(circle, hash_string(hash_key))
+    local st = binary_search(circle, hash_string(opts.hash_key))
     local size = #circle
     local ed = st + size - 1
     for i = st, ed do  -- TODO: algorithm O(n)
         local idx = circle[(i - 1) % size + 1][2]
         if peer_cb(idx, servers[idx]) then
-            return servers[idx]
+            return idx, servers[idx]
         end
     end
 
-    return nil, "consistent hash: no servers available"
+    return nil, nil, nil, "consistent hash: no servers available"
 end
 
 
-function _M.free_consitent_hash_server(srv, failed)
-    return
+local function gen_opts(ups, opts, skey)
+    local key
+    local mode = ups.mode
+    if mode == "hash" then
+        key = opts.hash_key or ngx.var.uri
+    elseif mode == "url_hash" then
+        key = ngx.var.uri
+    elseif mode == "ip_hash" then
+        key = ngx.var.remote_addr
+    elseif mode == "header_hash" then
+        key = ngx.var.http_x_hash_key or ngx.var.uri
+    end
+    return { hash_key=key }
+end
+
+function _M.ipairsrvs(servers, peer_cb, ups, opts, skey)
+    local mopts = gen_opts(ups, opts, skey)
+    return function() return next_server(servers, peer_cb, mopts) end
 end
 
 

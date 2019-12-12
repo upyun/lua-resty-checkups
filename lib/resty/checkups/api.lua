@@ -6,6 +6,7 @@ local heartbeat       = require "resty.checkups.heartbeat"
 local dyconfig        = require "resty.checkups.dyconfig"
 local base            = require "resty.checkups.base"
 local try             = require "resty.checkups.try"
+local dns             = require "resty.checkups.dns"
 local subsystem       = require "resty.subsystem"
 
 local str_format = string.format
@@ -170,7 +171,17 @@ function _M.get_ups_timeout(skey)
 end
 
 
-function _M.create_checker()
+function _M.get_ups(skey)
+    if not skey then
+        return
+    end
+
+    local ups = base.upstream.checkups[skey]
+    return ups
+end
+
+
+function _M.create_checker(dns_config_getter)
     local phase = get_phase()
     if phase ~= "init_worker" then
         error("create_checker must be called in init_worker phase")
@@ -189,7 +200,7 @@ function _M.create_checker()
     if base.upstream.ups_status_sync_enable and not base.ups_status_timer_created then
         local ok, err = ngx.timer.at(0, base.ups_status_checker)
         if not ok then
-            log(WARN, "failed to create ups_status_checker: ", err)
+            log(ERR, "failed to create ups_status_checker: ", err)
             return
         end
         base.ups_status_timer_created = true
@@ -202,10 +213,11 @@ function _M.create_checker()
         return
     end
 
+    dns.create_timer(dns_config_getter)
     -- only worker 0 will create heartbeat timer
     local ok, err = ngx.timer.at(0, heartbeat.active_checkup)
     if not ok then
-        log(WARN, "failed to create timer: ", err)
+        log(ERR, "failed to create timer: ", err)
         return
     end
 
@@ -233,14 +245,25 @@ local function gen_upstream(skey, upstream)
             return nil, "cluster invalid"
         end
     else
-        -- only servers
         local dyupstream, err = dyconfig.do_get_upstream(skey)
         if err then
             return nil, err
         end
 
         dyupstream = dyupstream or {}
-        dyupstream.cluster = upstream
+        if upstream.servers then
+            -- store config
+            for k, v in pairs(upstream) do
+                if k ~= "servers" then
+                    dyupstream[k] = v
+                else
+                    dyupstream.cluster = { { servers = v } }
+                end
+            end
+        else
+            -- only cluster
+            dyupstream.cluster = upstream
+        end
         ups = dyupstream
     end
 
@@ -318,6 +341,16 @@ function _M.delete_upstream(skey)
     base.release_lock(lock)
 
     return ok, err
+end
+
+
+function _M.try_register(name, module)
+    return try.register(name, module)
+end
+
+
+function _M.try_unregister(name)
+    return try.unregister(name)
 end
 
 
